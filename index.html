@@ -174,6 +174,46 @@ textarea:focus, input:focus, select:focus, .btn:focus-visible, .abas button:focu
 .selo-ok{background:var(--ok-bg); border-color:var(--ok-borda); color:var(--ok)}
 .selo-info{background:var(--info-bg); border-color:var(--info-borda); color:var(--info)}
 
+/* --- Lista de ocorrências: uma linha por problema --- */
+.ocorrencias{border:1px solid var(--linha); border-radius:var(--raio); overflow:hidden}
+.oc{border-bottom:1px solid var(--linha); background:var(--papel)}
+.oc:last-child{border-bottom:0}
+.oc-topo{
+  display:grid; grid-template-columns:26px 1fr auto auto; gap:10px; align-items:center;
+  padding:9px 12px; cursor:pointer; width:100%; text-align:left; border:0; background:none; font:inherit;
+}
+.oc-topo:hover{background:var(--papel-2)}
+.oc-ico{font-weight:700; font-size:15px; text-align:center}
+.oc-tit{font-weight:600; font-size:14.5px; line-height:1.3}
+.oc-tit .qto{font-weight:700}
+.oc-acao{font-size:13px; color:var(--tinta-2); white-space:nowrap}
+.oc-seta{color:var(--tinta-3); font-size:11px; transition:transform .12s}
+.oc[open] .oc-seta{transform:rotate(180deg)}
+.oc-corpo{padding:0 12px 11px 48px; font-size:13.5px; color:var(--tinta-2); display:none}
+.oc[open] .oc-corpo{display:block}
+.oc-corpo p{margin:0 0 6px}
+.oc-corpo .acao{color:var(--tinta); font-weight:600}
+.oc-critico{border-left:4px solid var(--critico-borda)}
+.oc-critico .oc-ico{color:var(--critico)}
+.oc-atencao{border-left:4px solid var(--atencao-borda)}
+.oc-atencao .oc-ico{color:var(--atencao)}
+.oc-info{border-left:4px solid var(--info-borda)}
+.oc-info .oc-ico{color:var(--info)}
+.oc-ok{border-left:4px solid var(--ok-borda)}
+.oc-ok .oc-ico{color:var(--ok)}
+.oc-vazio{padding:14px; font-size:14px; color:var(--ok); font-weight:600}
+
+/* --- Densidade de tabela --- */
+.barra-densidade{
+  display:flex; justify-content:flex-end; align-items:center; gap:8px;
+  padding:6px 10px; border-bottom:1px solid var(--linha); background:var(--papel-2);
+  font-size:13px; color:var(--tinta-2);
+}
+.mais-badges{
+  font-size:11.5px; font-weight:700; color:var(--tinta-2); cursor:default;
+  padding:1px 6px; border-radius:9px; background:var(--papel-3); border:1px solid var(--linha-forte);
+}
+
 /* ============================================================
    5. INDICADORES
    ============================================================ */
@@ -410,7 +450,8 @@ details.falhas pre{
         <div class="rolagem" id="tab-ritmo"></div>
         <div class="explica">Medido pelo relógio: <b>quantidade produzida ÷ (HR.FIM &minus; HR.INICIO)</b>, nunca pela coluna HORAS do ERP.
         O número em destaque já exclui as OFs com parada embutida ou ritmo implausível — é o ritmo que a máquina sustenta quando a ordem corre normal,
-        o que serve para carga-máquina e sequenciamento. O valor entre parênteses é o mesmo cálculo sem excluir nada.</div>
+        o que serve para carga-máquina e sequenciamento. O valor entre parênteses é o mesmo cálculo sem excluir nada.
+        <b>Confiança:</b> produto medido em uma única OF é indicativo, não medição — uma ordem sozinha não separa o ritmo da máquina do acaso daquela ordem.</div>
       </div>
     </div>
     <div class="cartao">
@@ -685,7 +726,7 @@ function htmlParaTexto(texto){
 function parsearRelatorio(texto){
   var diag = {
     linhasTotais:0, lidas:0, ruido:0, estrutura:0, totalizadores:0, vazias:0, falhas:[], avisos:[],
-    subtotais:[], totalGeral:null, layout:null, origemHTML:false, formatoBinario:null,
+    subtotais:[], totalGeral:null, layout:null, origemHTML:false, formatoBinario:null, semProduto:0,
     periodoDe:null, periodoAte:null, emissaoData:null, emissaoHora:null, faseRelatorio:null
   };
   var registros = [];
@@ -727,6 +768,7 @@ function parsearRelatorio(texto){
       }else{
         registros.push(res.registro);
         diag.lidas++;
+        if(res.registro.produto === '(sem produto)') diag.semProduto++;
         if(res.layout && !diag.layout) diag.layout = res.layout;
       }
       continue;
@@ -1052,8 +1094,14 @@ var FATOR_PARADA_EMBUTIDA    = 2.5;  /* 3.7 #3 */
 var TOL_PADRAO_ENTRE_CORES   = 0.15; /* 3.7 #1 */
 var MIN_SEQUENCIA_COLADA     = 120;  /* 3.7 #4, em minutos */
 
+/* escopo 'of' pesa no produto; 'bloco' e 'info' descrevem o contexto e não contam como defeito do item */
+var ANOMALIAS_DE_CONTEXTO = ['sequencia-colada', 'refeicao-descontada', 'rateio-de-lote', 'lote-de-execucao'];
 function marcar(ordem, tipo, severidade, titulo, texto){
-  ordem.anomalias.push({tipo:tipo, severidade:severidade, titulo:titulo, texto:texto});
+  ordem.anomalias.push({tipo:tipo, severidade:severidade, titulo:titulo, texto:texto,
+                        escopo:ANOMALIAS_DE_CONTEXTO.indexOf(tipo) > -1 ? 'contexto' : 'of'});
+}
+function anomaliasDoItem(o){
+  return o.anomalias.filter(function(a){ return a.escopo !== 'contexto'; });
 }
 function temAnomalia(ordem, tipo){
   return ordem.anomalias.some(function(a){ return a.tipo === tipo; });
@@ -1117,7 +1165,7 @@ function detectarRateioDeLote(ordens, registros){
 function detectarPadraoImplausivel(ordens){
   var porProduto = new Map();
   ordens.forEach(function(o){
-    if(!o.elegivel || !o.temPadrao) return;
+    if(!o.elegivel || !o.temPadrao || o.produto === '(sem produto)') return;
     if(!porProduto.has(o.produto)) porProduto.set(o.produto, []);
     porProduto.get(o.produto).push(o);
   });
@@ -1141,7 +1189,7 @@ function detectarPadraoImplausivel(ordens){
 
 /** #3 — duração real muito acima das OFs gêmeas: parada (almoço, setup, falta de material) dentro da OF. */
 function detectarParadaEmbutida(ordens){
-  var elegiveis = ordens.filter(function(o){ return o.elegivel; });
+  var elegiveis = ordens.filter(function(o){ return o.elegivel && o.produto !== '(sem produto)'; });
   var porQtde = new Map(), porProduto = new Map();
   elegiveis.forEach(function(o){
     var k = o.produto + '|' + o.qtdeProduzida;
@@ -1276,7 +1324,7 @@ function agregarPorProduto(ordens){
     g.qtdeOFs        = g.ordens.length;
     g.qtdeOFsValidas = elig.length;
     g.qtdePendentes  = g.ordens.filter(function(o){ return o.pendente; }).length;
-    g.qtdeAnomalas   = elig.filter(function(o){ return o.anomalias.length > 0; }).length;
+    g.qtdeAnomalas   = elig.filter(function(o){ return anomaliasDoItem(o).length > 0; }).length;
 
     g.qtde        = soma(elig, function(o){ return o.qtdeProduzida; });
     g.minutos     = soma(elig, function(o){ return o.minutosReais; });
@@ -1321,7 +1369,8 @@ function agregarPorProduto(ordens){
     g.padraoOFMin = padroesOF.length ? Math.min.apply(null, padroesOF) : null;
     g.padraoOFMax = padroesOF.length ? Math.max.apply(null, padroesOF) : null;
     g.dispersaoInterna = (g.padraoOFMin && g.padraoOFMax) ? (g.padraoOFMax / g.padraoOFMin - 1) : null;
-    g.padraoInstavel = padroesOF.length >= 2 && g.dispersaoInterna !== null &&
+    g.produtoDesconhecido = g.produto === '(sem produto)';
+    g.padraoInstavel = !g.produtoDesconhecido && padroesOF.length >= 2 && g.dispersaoInterna !== null &&
                        g.dispersaoInterna > TOL_PADRAO_ENTRE_CORES;
     if(g.padraoInstavel){
       var txtInst = 'O item ' + g.produto + ' aparece com tempos padrão diferentes entre as próprias OFs do período: de ' +
@@ -1351,7 +1400,7 @@ function agregarPorProduto(ordens){
 /** Agrupa por peça física (AAA.BBB), ignorando a cor — anomalia #1. */
 function agregarPorPeca(produtos, ordens){
   var mapa = new Map();
-  produtos.forEach(function(p){
+  produtos.filter(function(p){ return !p.produtoDesconhecido; }).forEach(function(p){
     var g = mapa.get(p.peca);
     if(!g){ g = {peca:p.peca, cores:[], descricao:p.descricao}; mapa.set(p.peca, g); }
     g.cores.push(p);
@@ -1519,7 +1568,7 @@ function agregarPorRecurso(ordens, turnos, campo, campoNome){
     g.aderencia      = g.horasReais ? (g.horasPadrao / g.horasReais) * 100 : null;
     g.qtdeOFs        = g.ordens.length;
     g.qtdePendentes  = g.ordens.filter(function(o){ return o.pendente; }).length;
-    g.qtdeAnomalas   = elig.filter(function(o){ return o.anomalias.length > 0; }).length;
+    g.qtdeAnomalas   = elig.filter(function(o){ return anomaliasDoItem(o).length > 0; }).length;
     g.qtdeProdutos   = g.produtos.size;
     g.qtdeMaquinas   = g.maquinas.size;
 
@@ -1624,7 +1673,8 @@ function construirModelo(registros, diagnostico, paradas){
     ofsComRefeicao: ordens.filter(function(o){ return o.minutosRefeicao > 0; }).length,
     semOF: soma(turnos, function(t){ return t.semOF; }),
     sobreposicao: soma(turnos, function(t){ return t.sobreposicao; }),
-    produtosDistintos: produtos.length,
+    produtosDistintos: produtos.filter(function(p){ return !p.produtoDesconhecido; }).length,
+    linhasSemProduto: diagnostico.semProduto || 0,
     pecasDivergentes: pecas.filter(function(p){ return p.divergente; }).length,
     produtosPadraoInstavel: produtos.filter(function(p){ return p.padraoInstavel; }).length,
     cadeiasColadas: cadeias.length
@@ -1907,19 +1957,51 @@ var ICONES = {critico:'✖', atencao:'▲', ok:'✓', info:'ℹ'};
 function selo(texto, tipo, icone){
   return '<span class="selo selo-' + tipo + '">' + (icone || ICONES[tipo] || '') + ' ' + esc(texto) + '</span>';
 }
-function selosDaOrdem(o){
-  var s = '';
-  if(o.situacao === 'aberta')        s += selo('Aberta sem fechamento', 'critico', '◔');
-  if(o.situacao === 'incompleta')    s += selo('Partida incompleta', 'critico', '⇄');
-  if(o.situacao === 'duracao-zero')  s += selo('Duração zero', 'atencao');
-  if(o.situacao === 'rateada')       s += selo('Rateada no lote ' + (o.loteDeExecucao || ''), 'info', '≡');
-  if(o.situacao === 'hora-invalida') s += selo('Hora inválida', 'critico');
-  if(o.situacao === 'virada-dia')    s += selo('Fim antes do início', 'critico');
-  if(o.partida && o.situacao !== 'incompleta') s += selo('Ordem partida (' + o.datas.length + ' datas)', 'info', '⇄');
-  o.anomalias.forEach(function(a){ s += selo(a.titulo, a.severidade); });
-  if(!s) s = selo('Sem ocorrência', 'ok');
-  return s;
+/** No máximo 2 selos na célula; o resto vira contagem e a explicação fica na linha de detalhe. */
+function selosCurtos(lista, limite){
+  limite = limite || 2;
+  if(!lista.length) return selo('Sem ocorrência', 'ok');
+  var peso = {critico:0, atencao:1, info:2, ok:3};
+  var ord = lista.slice().sort(function(a, b){ return peso[a.tipo] - peso[b.tipo]; });
+  var vis = ord.slice(0, limite).map(function(x){ return selo(x.texto, x.tipo, x.icone); }).join('');
+  if(ord.length > limite) vis += '<span class="mais-badges" title="mais ' + (ord.length - limite) + ' — veja a explicação abaixo da linha">+' + (ord.length - limite) + '</span>';
+  return vis;
 }
+function sinaisDaOrdem(o){
+  var lista = [];
+  if(o.situacao === 'aberta')        lista.push({texto:'Aberta sem fechamento', tipo:'critico', icone:'◔'});
+  if(o.situacao === 'incompleta')    lista.push({texto:'Partida incompleta', tipo:'critico', icone:'⇄'});
+  if(o.situacao === 'duracao-zero')  lista.push({texto:'Duração zero', tipo:'atencao'});
+  if(o.situacao === 'rateada')       lista.push({texto:'Rateada no lote ' + (o.loteDeExecucao || ''), tipo:'info', icone:'≡'});
+  if(o.situacao === 'hora-invalida') lista.push({texto:'Hora inválida', tipo:'critico'});
+  if(o.situacao === 'virada-dia')    lista.push({texto:'Fim antes do início', tipo:'critico'});
+  if(o.partida && o.situacao !== 'incompleta') lista.push({texto:'Ordem partida (' + o.datas.length + ' datas)', tipo:'info', icone:'⇄'});
+  o.anomalias.forEach(function(a){ lista.push({texto:a.titulo, tipo:a.severidade}); });
+  return lista;
+}
+function selosDaOrdem(o){ return selosCurtos(sinaisDaOrdem(o)); }
+/** Uma linha por problema; o porquê fica atrás de um toque. */
+function renderOcorrencias(host, alertas){
+  if(!host) return;
+  var reais = alertas.filter(function(a){ return a.sev !== 'ok'; });
+  if(!reais.length){
+    host.innerHTML = '<div class="ocorrencias"><div class="oc oc-ok"><div class="oc-vazio">' +
+      ICONES.ok + ' ' + esc(alertas.length ? alertas[0].titulo : 'Nenhuma ocorrência no período') + '</div></div></div>';
+    return;
+  }
+  host.innerHTML = '<div class="ocorrencias">' + reais.map(function(a, i){
+    return '<details class="oc oc-' + a.sev + '"' + (i === 0 && a.sev === 'critico' ? ' open' : '') + '>' +
+      '<summary class="oc-topo">' +
+        '<span class="oc-ico" aria-hidden="true">' + ICONES[a.sev] + '</span>' +
+        '<span class="oc-tit">' + esc(a.titulo) + '</span>' +
+        (a.ir ? '<button class="btn btn-mini" data-ir="' + a.ir + '">' + esc(a.irTexto || 'Ver') + '</button>' : '<span></span>') +
+        '<span class="oc-seta" aria-hidden="true">▾</span>' +
+      '</summary>' +
+      '<div class="oc-corpo"><p>' + esc(a.texto) + '</p>' +
+      (a.acao ? '<p class="acao">→ ' + esc(a.acao) + '</p>' : '') + '</div></details>';
+  }).join('') + '</div>';
+}
+
 function blocoAlerta(a){
   return '<div class="alerta alerta-' + a.sev + '">' +
     '<span class="ico" aria-hidden="true">' + ICONES[a.sev] + '</span>' +
@@ -1978,13 +2060,29 @@ function linhasVisiveis(id){
   return linhas;
 }
 
+function colunasVisiveis(t){
+  var temSecundaria = t.cfg.colunas.some(function(c){ return c.essencial === false; });
+  if(!temSecundaria || t.completo) return t.cfg.colunas;
+  return t.cfg.colunas.filter(function(c){ return c.essencial !== false; });
+}
+
 function renderTabela(id){
   var t = TABELAS[id], host = $(t.cfg.alvo);
   if(!host) return;
   var linhas = linhasVisiveis(id);
-  if(!linhas.length){ host.innerHTML = '<div class="vazio">' + esc(t.cfg.vazio || 'Nenhum registro no filtro aplicado') + '</div>'; return; }
+  var secundarias = t.cfg.colunas.filter(function(c){ return c.essencial === false; }).length;
+  var barra = secundarias
+    ? '<div class="barra-densidade">' + secundarias + ' coluna(s) a mais disponível(is) ' +
+      '<button class="btn btn-mini" data-densidade="' + id + '">' +
+      (t.completo ? 'Ver essencial' : 'Ver tudo') + '</button></div>'
+    : '';
+  if(!linhas.length){
+    host.innerHTML = barra + '<div class="vazio">' + esc(t.cfg.vazio || 'Nenhum registro no filtro aplicado') + '</div>';
+    return;
+  }
+  var colunas = colunasVisiveis(t);
 
-  var cab = t.cfg.colunas.map(function(c){
+  var cab = colunas.map(function(c){
     var seta = t.col === c.ch ? ' <span class="seta">' + (t.dir === 'asc' ? '▲' : '▼') + '</span>' : '';
     return '<th class="ordenavel ' + (c.tipo === 'num' ? 'n' : (c.cls || '')) + '" data-col="' + c.ch + '" scope="col"' +
            (c.larg ? ' style="min-width:' + c.larg + 'px"' : '') +
@@ -1994,14 +2092,14 @@ function renderTabela(id){
   var temExtra = false;
   var corpo = linhas.map(function(l){
     var cls = t.cfg.classeLinha ? t.cfg.classeLinha(l) : '';
-    var linha = '<tr class="principal ' + cls + '">' + t.cfg.colunas.map(function(c){
+    var linha = '<tr class="principal ' + cls + '">' + colunas.map(function(c){
       var conteudo = c.html ? c.html(l) : formatarCelula(c, c.val(l));
       return '<td class="' + (c.tipo === 'num' ? 'n' : (c.cls || '')) + '">' + conteudo + '</td>';
     }).join('') + '</tr>';
     var extra = t.cfg.linhaExtra ? t.cfg.linhaExtra(l) : '';
     if(extra){
       temExtra = true;
-      linha += '<tr class="linha-extra ' + cls + '"><td colspan="' + t.cfg.colunas.length + '">' + extra + '</td></tr>';
+      linha += '<tr class="linha-extra ' + cls + '"><td colspan="' + colunas.length + '">' + extra + '</td></tr>';
     }
     return linha;
   }).join('');
@@ -2009,12 +2107,12 @@ function renderTabela(id){
   var rodape = '';
   if(t.cfg.totalizador){
     var tot = t.cfg.totalizador(linhas);
-    rodape = '<tfoot><tr>' + t.cfg.colunas.map(function(c){
+    rodape = '<tfoot><tr>' + colunas.map(function(c){
       var v = tot[c.ch];
       return '<td class="' + (c.tipo === 'num' ? 'n' : '') + '">' + (v === undefined ? '' : v) + '</td>';
     }).join('') + '</tr></tfoot>';
   }
-  host.innerHTML = '<table class="tab' + (temExtra ? ' com-extra' : '') + '"><thead><tr>' + cab +
+  host.innerHTML = barra + '<table class="tab' + (temExtra ? ' com-extra' : '') + '"><thead><tr>' + cab +
     '</tr></thead><tbody>' + corpo + '</tbody>' + rodape + '</table>';
 }
 function formatarCelula(c, v){
@@ -2088,21 +2186,30 @@ function definirTodasAsTabelas(){
   definirTabela('produtos', {
     alvo:'#tab-produtos', vazio:'Nenhum produto com OF válida no período.', ordemInicial:'minutos',
     colunas:[
-      {ch:'produto', tit:'Produto', val:function(l){ return l.produto; }, cls:'mono', larg:98},
-      {ch:'descricao', tit:'Descrição', val:function(l){ return l.descricao || ''; }, cls:'desc', larg:210},
-      {ch:'qtdeOFsValidas', tit:'OFs válidas', tipo:'num', dec:0, val:function(l){ return l.qtdeOFsValidas; },
+      {ch:'produto', tit:'Produto', val:function(l){ return l.produto; }, cls:'mono', larg:98,
+       html:function(l){
+         return l.produtoDesconhecido ? selo('Sem código de produto', 'critico')
+                                      : '<span class="mono">' + esc(l.produto) + '</span>';
+       }},
+      {ch:'descricao', tit:'Descrição', val:function(l){ return l.descricao || ''; }, cls:'desc', larg:210,
+       html:function(l){
+         return l.produtoDesconhecido
+           ? '<span class="obs">o relatório foi colado sem as linhas "PRODUTO :" — todas as OFs caíram num item único</span>'
+           : esc(l.descricao || '');
+       }},
+      {ch:'qtdeOFsValidas', essencial:false, tit:'OFs válidas', tipo:'num', dec:0, val:function(l){ return l.qtdeOFsValidas; },
        html:function(l){ return fmt(l.qtdeOFsValidas, 0) + '<span class="obs">de ' + fmt(l.qtdeOFs, 0) + ' no período</span>'; }},
       {ch:'qtde', tit:'Peças', tipo:'num', dec:0, val:function(l){ return l.qtde; }},
-      {ch:'minutos', tit:'Min reais', tipo:'num', dec:0, val:function(l){ return l.minutos; }},
-      {ch:'horasPadrao', tit:'H padrão', tipo:'num', dec:4, val:function(l){ return l.horasPadrao; }},
-      {ch:'pecasPorMinuto', tit:'pç/min (todas)', tipo:'num', dec:3, val:function(l){ return l.pecasPorMinuto; }},
+      {ch:'minutos', essencial:false, tit:'Min reais', tipo:'num', dec:0, val:function(l){ return l.minutos; }},
+      {ch:'horasPadrao', essencial:false, tit:'H padrão', tipo:'num', dec:4, val:function(l){ return l.horasPadrao; }},
+      {ch:'pecasPorMinuto', essencial:false, tit:'pç/min (todas)', tipo:'num', dec:3, val:function(l){ return l.pecasPorMinuto; }},
       {ch:'pecasPorMinutoLimpo', tit:'pç/min (sem anômalas)', tipo:'num', dec:3, val:function(l){ return l.pecasPorMinutoLimpo; },
        html:function(l){
          var base = fmt(l.pecasPorMinutoLimpo, 3);
          if(l.ofsDescartadasRitmo > 0) base += '<span class="obs">' + l.ofsDescartadasRitmo + ' OF com parada embutida fora da conta</span>';
          return base;
        }},
-      {ch:'pecasPorHoraLimpo', tit:'pç/h (sem anômalas)', tipo:'num', dec:1, val:function(l){ return l.pecasPorHoraLimpo; }},
+      {ch:'pecasPorHoraLimpo', essencial:false, tit:'pç/h (sem anômalas)', tipo:'num', dec:1, val:function(l){ return l.pecasPorHoraLimpo; }},
       {ch:'segPecaReal', tit:'s/pç real', tipo:'num', dec:2, val:function(l){ return l.segPecaReal; }},
       {ch:'segPecaPadrao', tit:'s/pç padrão', tipo:'num', dec:2, val:function(l){ return l.segPecaPadrao; },
        html:function(l){
@@ -2115,11 +2222,10 @@ function definirTodasAsTabelas(){
        html:function(l){ return '<span class="' + classeAderencia(l.aderencia) + '"><b>' + pct(l.aderencia) + '</b></span>'; }},
       {ch:'sinais', tit:'Sinalizadores', cls:'explicacao', larg:210, val:function(l){ return l.anomalias.length + (l.qtdeAnomalas ? 1 : 0); },
        html:function(l){
-         var s = '';
-         l.anomalias.forEach(function(a){ s += selo(a.titulo, a.severidade); });
-         if(l.qtdeAnomalas) s += selo(l.qtdeAnomalas + ' OF com anomalia', 'atencao');
-         if(l.qtdePendentes) s += selo(l.qtdePendentes + ' OF pendente', 'info', '◔');
-         return s || selo('Sem ocorrência', 'ok');
+         var lista = l.anomalias.map(function(a){ return {texto:a.titulo, tipo:a.severidade}; });
+         if(l.qtdeAnomalas) lista.push({texto:l.qtdeAnomalas + ' OF com anomalia', tipo:'atencao'});
+         if(l.qtdePendentes) lista.push({texto:l.qtdePendentes + ' OF pendente', tipo:'info', icone:'◔'});
+         return selosCurtos(lista);
        },
        csv:function(l){
          var t = l.anomalias.map(function(a){ return a.titulo + ': ' + a.texto; });
@@ -2130,6 +2236,10 @@ function definirTodasAsTabelas(){
     linhaExtra:function(l){
       if(!l.anomalias.length) return '';
       return l.anomalias.map(function(a){ return ICONES[a.severidade] + ' <b>' + esc(a.titulo) + ':</b> ' + esc(a.texto); }).join('<br>');
+    },
+    classeLinha:function(l){
+      if(l.padraoInstavel || l.anomalias.some(function(a){ return a.severidade === 'critico'; })) return 'linha-critica';
+      return '';
     },
     totalizador:function(linhas){
       var q = soma(linhas, function(l){ return l.qtde; }), m = soma(linhas, function(l){ return l.minutos; });
@@ -2143,8 +2253,17 @@ function definirTodasAsTabelas(){
   definirTabela('ritmo', {
     alvo:'#tab-ritmo', vazio:'Nenhum produto com OF válida para medir ritmo.', ordemInicial:'pecasPorMinutoLimpo',
     colunas:[
-      {ch:'produto', tit:'Produto', val:function(l){ return l.produto; }, cls:'mono', larg:98},
-      {ch:'descricao', tit:'Descrição', val:function(l){ return l.descricao || ''; }, cls:'desc', larg:230},
+      {ch:'produto', tit:'Produto', val:function(l){ return l.produto; }, cls:'mono', larg:98,
+       html:function(l){
+         return l.produtoDesconhecido
+           ? selo('Sem código de produto', 'critico')
+           : '<span class="mono">' + esc(l.produto) + '</span>';
+       }},
+      {ch:'descricao', tit:'Descrição', val:function(l){ return l.descricao || ''; }, cls:'desc', larg:230,
+       html:function(l){
+         if(l.produtoDesconhecido) return '<span class="obs">o relatório foi colado sem as linhas "PRODUTO :" — todas as OFs caíram num item único</span>';
+         return esc(l.descricao || '');
+       }},
       {ch:'pecasPorMinutoLimpo', tit:'Peças por minuto', tipo:'num', dec:2, val:function(l){ return l.pecasPorMinutoLimpo; },
        html:function(l){
          return '<span class="grande">' + fmt(l.pecasPorMinutoLimpo, 2) + '</span>' +
@@ -2164,7 +2283,7 @@ function definirTodasAsTabelas(){
        html:function(l){
          var n = l.qtdeOFsValidas - l.ofsDescartadasRitmo;
          if(!n) return selo('Sem medição válida', 'critico');
-         if(n === 1) return selo('1 OF só — indicativo', 'atencao') + '<span class="obs">uma única ordem não estabelece ritmo; confirme com mais dias</span>';
+         if(n === 1) return selo('1 OF só — indicativo', 'atencao');
          return selo(n + ' OFs medidas', 'ok');
        },
        csv:function(l){ return (l.qtdeOFsValidas - l.ofsDescartadasRitmo) + ' OF(s) na medição'; }}
@@ -2213,10 +2332,10 @@ function definirTodasAsTabelas(){
        csv:function(l){ return l.legs[l.legs.length - 1].horaFimTxt; }},
       {ch:'minutosReais', tit:'Min reais', tipo:'num', dec:0, val:function(l){ return l.elegivel ? l.minutosReais : null; }},
       {ch:'pecasPorMinuto', tit:'pç/min', tipo:'num', dec:3, val:function(l){ return l.pecasPorMinuto; }},
-      {ch:'pecasPorHora', tit:'pç/h', tipo:'num', dec:1, val:function(l){ return l.pecasPorHora; }},
-      {ch:'segPecaReal', tit:'s/pç real', tipo:'num', dec:2, val:function(l){ return l.segPecaReal; }},
-      {ch:'segPecaPadrao', tit:'s/pç padrão', tipo:'num', dec:4, val:function(l){ return l.segPecaPadrao; }},
-      {ch:'horasPadrao', tit:'H padrão', tipo:'num', dec:6, val:function(l){ return l.horasPadrao; }},
+      {ch:'pecasPorHora', essencial:false, tit:'pç/h', tipo:'num', dec:1, val:function(l){ return l.pecasPorHora; }},
+      {ch:'segPecaReal', essencial:false, tit:'s/pç real', tipo:'num', dec:2, val:function(l){ return l.segPecaReal; }},
+      {ch:'segPecaPadrao', essencial:false, tit:'s/pç padrão', tipo:'num', dec:4, val:function(l){ return l.segPecaPadrao; }},
+      {ch:'horasPadrao', essencial:false, tit:'H padrão', tipo:'num', dec:6, val:function(l){ return l.horasPadrao; }},
       {ch:'aderencia', tit:'Aderência', tipo:'num', dec:1, val:function(l){ return l.aderencia; },
        html:function(l){ return '<span class="' + classeAderencia(l.aderencia) + '"><b>' + pct(l.aderencia) + '</b></span>'; }},
       {ch:'sinais', tit:'Sinalizadores', cls:'explicacao', larg:210, val:function(l){ return l.anomalias.length; },
@@ -2257,13 +2376,13 @@ function definirTodasAsTabelas(){
       {ch:'data', tit:'Data', val:function(l){ return l.datas.join(' + '); }},
       {ch:'produto', tit:'Produto', val:function(l){ return l.produto; }, cls:'mono', larg:98},
       {ch:'descricao', tit:'Descrição', val:function(l){ return l.descricao || ''; }, cls:'desc', larg:210},
-      {ch:'maquina', tit:'Máquina', val:function(l){ return l.maquina; }},
+      {ch:'maquina', essencial:false, tit:'Máquina', val:function(l){ return l.maquina; }},
       {ch:'funcionario', tit:'Operador', val:function(l){ return (l.funcionario || '') + ' ' + (l.funcionarioNome || ''); }},
-      {ch:'qtdeOrdem', tit:'Qtde ordem', tipo:'num', dec:0, val:function(l){ return l.qtdeOrdem; }},
+      {ch:'qtdeOrdem', essencial:false, tit:'Qtde ordem', tipo:'num', dec:0, val:function(l){ return l.qtdeOrdem; }},
       {ch:'qtdeProduzida', tit:'Qtde prod.', tipo:'num', dec:0, val:function(l){ return l.qtdeProduzida; }},
       {ch:'inicio', tit:'Início', val:function(l){ return l.legs[0].horaInicioTxt; }, cls:'mono'},
       {ch:'fim', tit:'Fim', val:function(l){ return l.legs[l.legs.length - 1].horaFimTxt; }, cls:'mono'},
-      {ch:'horasPadrao', tit:'H padrão', tipo:'num', dec:6, val:function(l){ return l.horasPadrao; }},
+      {ch:'horasPadrao', essencial:false, tit:'H padrão', tipo:'num', dec:6, val:function(l){ return l.horasPadrao; }},
       {ch:'decorrido', tit:'Tempo decorrido', tipo:'num', dec:0, val:function(l){ return l.decorridoMin; },
        html:function(l){
          if(l.decorridoMin === null) return '—';
@@ -2280,14 +2399,14 @@ function definirTodasAsTabelas(){
     return [
       {ch:'chave', tit:rotulo, val:function(l){ return l.chave; }, cls:'mono',
        html:function(l){ return '<b class="mono">' + esc(l.chave) + '</b><span class="obs">' + esc(l.nome) + '</span>'; }},
-      {ch:'dias', tit:'Dias', tipo:'num', dec:0, val:function(l){ return l.dias; }},
+      {ch:'dias', essencial:false, tit:'Dias', tipo:'num', dec:0, val:function(l){ return l.dias; }},
       {ch:'qtdeOFs', tit:'OFs', tipo:'num', dec:0, val:function(l){ return l.qtdeOFs; }},
-      {ch:'qtdeProdutos', tit:'Produtos', tipo:'num', dec:0, val:function(l){ return l.qtdeProdutos; }},
+      {ch:'qtdeProdutos', essencial:false, tit:'Produtos', tipo:'num', dec:0, val:function(l){ return l.qtdeProdutos; }},
       {ch:'qtde', tit:'Peças', tipo:'num', dec:0, val:function(l){ return l.qtde; }},
       {ch:'minutos', tit:'Min apontados', tipo:'num', dec:0, val:function(l){ return l.minutos; }},
       {ch:'semOF', tit:'Min sem OF', tipo:'num', dec:0, val:function(l){ return l.semOF; },
        html:function(l){ return l.semOF === null ? '—' : '<b>' + fmt(l.semOF, 0) + '</b><span class="obs">' + pct(l.percSemOF) + ' da janela de turno</span>'; }},
-      {ch:'horasPadrao', tit:'H padrão', tipo:'num', dec:4, val:function(l){ return l.horasPadrao; }},
+      {ch:'horasPadrao', essencial:false, tit:'H padrão', tipo:'num', dec:4, val:function(l){ return l.horasPadrao; }},
       {ch:'aderencia', tit:'Aderência', tipo:'num', dec:1, val:function(l){ return l.aderencia; },
        html:function(l){ return '<span class="' + classeAderencia(l.aderencia) + '"><b>' + pct(l.aderencia) + '</b></span>'; }},
       {ch:'pecasPorMinuto', tit:'pç/min agregado', tipo:'num', dec:3, val:function(l){ return l.pecasPorMinuto; },
@@ -2341,13 +2460,13 @@ function definirTodasAsTabelas(){
       {ch:'fim', tit:'Fim', val:function(l){ return l.fimMin; },
        html:function(l){ return '<span class="mono">' + esc(l.fimTxt) + '</span>'; }, csv:function(l){ return l.fimTxt; }},
       {ch:'minutos', tit:'Min reais', tipo:'num', dec:0, val:function(l){ return l.minutos; }},
-      {ch:'minutosInformados', tit:'Min da coluna Hr', tipo:'num', dec:0, val:function(l){ return l.minutosInformados; },
+      {ch:'minutosInformados', essencial:false, tit:'Min da coluna Hr', tipo:'num', dec:0, val:function(l){ return l.minutosInformados; },
        html:function(l){
          if(l.minutosInformados === null) return '—';
          return fmt(l.minutosInformados, 0) + (l.divergenciaMin ? '<span class="obs">difere ' + fmt(l.divergenciaMin, 0) + ' min do relógio</span>' : '');
        }},
       {ch:'motivo', tit:'Motivo', val:function(l){ return l.motivo; }, larg:190},
-      {ch:'ordem', tit:'OF do apontamento', val:function(l){ return l.ordem || ''; }, cls:'mono'},
+      {ch:'ordem', essencial:false, tit:'OF do apontamento', val:function(l){ return l.ordem || ''; }, cls:'mono'},
       {ch:'situacao', tit:'Onde cai no apontamento', cls:'explicacao', larg:230,
        val:function(l){ return l.minutosEmLacuna > 0 ? 2 : (l.minutosSobrepostos > 0 ? 1 : 0); },
        html:function(l){
@@ -2526,6 +2645,14 @@ function enriquecerPendencias(modelo){
    ------------------------------------------------------------ */
 function montarAlertas(m){
   var a = [], r = m.resumo, d = m.diagnostico, c = m.conferencia;
+
+  if(r.linhasSemProduto)
+    a.push({sev:'critico', titulo:r.linhasSemProduto + ' apontamento(s) sem código de produto',
+      texto:'O texto importado não trouxe as linhas "PRODUTO : 000.000.000" que identificam o item de cada bloco. ' +
+        'Sem o código não há como separar produto de produto: ritmo, tempo padrão e o comparativo Peça × cor ficam sem base, e todas as OFs caem num item único. ' +
+        'As análises de cadastro foram suspensas para não produzir número falso.',
+      acao:'Copie o relatório inteiro, com os cabeçalhos de PRODUTO, e não apenas as linhas de ordem.',
+      ir:'importar', irTexto:'Reimportar'});
 
   if(d.falhas.length)
     a.push({sev:'critico', titulo:plural(d.falhas.length, 'linha que o app não conseguiu ler', 'linhas que o app não conseguiu ler'),
@@ -2793,7 +2920,7 @@ function renderResumo(m){
   var r = m.resumo;
   dadosTabela('ritmo', m.produtos.filter(function(p){ return p.qtdeOFsValidas > 0; })); renderTabela('ritmo');
   var alertas = montarAlertas(m);
-  $('#resumo-alertas').innerHTML = alertas.map(blocoAlerta).join('');
+  renderOcorrencias($('#resumo-alertas'), alertas);
   var criticos = alertas.filter(function(a){ return a.sev === 'critico'; }).length;
   $('#resumo-qtd-alertas').textContent = alertas.filter(function(a){ return a.sev !== 'ok'; }).length +
     ' ocorrência(s), ' + criticos + ' crítica(s)';
@@ -2932,8 +3059,8 @@ function renderParadas(m){
         }).join('; ') + '. O app usa sempre o relógio, como faz com a coluna HORAS do apontamento.',
       acao:'Mesmo problema de rateio do outro relatório: não use a coluna Hr como fonte.'});
 
-  $('#paradas-alertas').innerHTML = alertas.map(blocoAlerta).join('') ||
-    '<div class="alerta alerta-ok"><span class="ico">✓</span><div class="txt"><h4>Paradas cruzadas</h4><p>Nenhuma ocorrência a destacar.</p></div></div>';
+  renderOcorrencias($('#paradas-alertas'), alertas.length ? alertas :
+    [{sev:'ok', titulo:'Paradas cruzadas sem ocorrência a destacar'}]);
 
   badge.hidden = false;
   badge.textContent = m.paradas.length;
@@ -2967,10 +3094,9 @@ function renderTudo(m){
     (m.maquinas[0] && m.maquinas[0].ritmoMin !== null
       ? ' · ritmo <b>' + fmt(m.maquinas[0].ritmoMin, 2) + ' a ' + fmt(m.maquinas[0].ritmoMax, 2) + ' pç/min</b>' : '');
 
-  $('#pendencias-alertas').innerHTML = m.resumo.ofsPendentes
-    ? montarAlertas(m).filter(function(a){ return /pendencias/.test(a.ir || ''); }).map(blocoAlerta).join('')
-    : '<div class="alerta alerta-ok"><span class="ico">✓</span><div class="txt"><h4>Nenhuma pendência de apontamento</h4>' +
-      '<p>Todas as ordens do período estão fechadas, com quantidade apontada e horário consistente.</p></div></div>';
+  renderOcorrencias($('#pendencias-alertas'), m.resumo.ofsPendentes
+    ? montarAlertas(m).filter(function(a){ return /pendencias/.test(a.ir || ''); })
+    : [{sev:'ok', titulo:'Nenhuma pendência: todas as ordens estão fechadas, com quantidade e horário consistentes'}]);
 }
 
 /* ------------------------------------------------------------
@@ -3084,6 +3210,13 @@ function ligarEventos(){
   document.addEventListener('click', function(ev){
     var alvo = ev.target.closest ? ev.target.closest('[data-ir]') : null;
     if(alvo){ irPara(alvo.getAttribute('data-ir')); return; }
+    var dens = ev.target.closest ? ev.target.closest('[data-densidade]') : null;
+    if(dens){
+      var idT = dens.getAttribute('data-densidade');
+      TABELAS[idT].completo = !TABELAS[idT].completo;
+      renderTabela(idT);
+      return;
+    }
     var exp = ev.target.closest ? ev.target.closest('[data-exportar]') : null;
     if(exp){
       var chave = exp.getAttribute('data-exportar');
