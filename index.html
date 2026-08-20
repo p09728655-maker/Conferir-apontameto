@@ -122,6 +122,7 @@ textarea, input[type=text], input[type=search], select{
 }
 input[type=search], select{font-family:inherit; font-size:14px}
 textarea{min-height:190px; resize:vertical; line-height:1.4; white-space:pre; overflow-wrap:normal}
+textarea.arrastando{border-color:var(--patrimar-vermelho); background:var(--patrimar-areia)}
 textarea:focus, input:focus, select:focus, .btn:focus-visible, .abas button:focus-visible{
   outline:2px solid var(--info); outline-offset:1px;
 }
@@ -291,6 +292,7 @@ details.falhas pre{
   <button role="tab" id="tab-ordens"     aria-selected="false" data-aba="ordens"    disabled>5 · Ordens</button>
   <button role="tab" id="tab-pendencias" aria-selected="false" data-aba="pendencias" disabled>6 · Pendências <span class="contador" id="cont-pend" hidden>0</span></button>
   <button role="tab" id="tab-recurso"    aria-selected="false" data-aba="recurso"   disabled>7 · Máquina &amp; operador</button>
+  <button role="tab" id="tab-paradas"    aria-selected="false" data-aba="paradas"   disabled>8 · Paradas <span class="contador" id="cont-paradas" hidden>0</span></button>
 </nav>
 
 <main>
@@ -303,15 +305,33 @@ details.falhas pre{
         <span class="contagem">REL. PLANILHAMENTO POR PRODUTO ou POR FUNCIONÁRIO</span>
       </header>
       <div class="corpo">
-        <p class="dica">Cole o texto do relatório do ERP Industrial ou carregue um arquivo <b>.txt</b> / <b>.csv</b>. Todo o processamento acontece neste navegador — nenhum dado é enviado para fora.</p>
+        <p class="dica">Cole o texto do relatório do ERP Industrial ou carregue um arquivo <b>.txt</b>, <b>.csv</b>, <b>.prn</b> ou o "exportar para Excel" do ERP (que costuma ser HTML) &mdash; ou arraste o arquivo para cima do campo. Todo o processamento acontece neste navegador — nenhum dado é enviado para fora.</p>
         <textarea id="entrada" spellcheck="false" aria-label="Texto do relatório" placeholder="PRODUTO : 794.001.116&#10;RACK JOAQUIM TAMPO 1500X336X15 MDP 1 CINAMOMO&#10;801404 ; 90,0000 ; 90,0000 ; 19/08/26 ; FUR16 ;FURADEIRA F601 6545 CNC XZ ; 893 ;MAURICIO CARLOS FERREIRA ; 16,16 ; 16,52 ; 55 ; 0,357750 ; 0,00"></textarea>
         <div class="linha-botoes" style="margin-top:10px">
           <button class="btn btn-principal" id="btn-processar">Processar relatório</button>
-          <input type="file" id="arquivo" class="campo-arquivo" accept=".txt,.csv,.prn,.rel,text/plain">
+          <input type="file" id="arquivo" class="campo-arquivo" >
           <button class="btn" id="btn-exemplo">Carregar dados de exemplo</button>
           <button class="btn" id="btn-limpar">Limpar</button>
         </div>
         <div id="erro-entrada" style="margin-top:10px"></div>
+      </div>
+    </div>
+
+    <div class="cartao">
+      <header>
+        <h2>Relatório de paradas <span class="selo selo-info">ℹ opcional</span></h2>
+        <span class="contagem">RELAT. PLANILHAMENTOS PARADAS</span>
+      </header>
+      <div class="corpo">
+        <p class="dica">Cole aqui o relatório de paradas do mesmo período. Com ele o app deixa de perguntar <b>"o que aconteceu no tempo sem OF?"</b> e passa a responder: quanto do vazio é setup, manutenção, café ou banheiro apontado &mdash; e quanto continua sem explicação. Também desconta a parada de dentro da janela da OF, revelando o ritmo líquido.</p>
+        <textarea id="entrada-paradas" spellcheck="false" aria-label="Texto do relatório de paradas" placeholder="MAURICIO CARLOS FERREIRA ; 19/08/26 ; 8,53 ; 9,06 ; 0,130000 ; FURADEIRA F601 6545 CNC XZ ; 0 ; SETUP FURADEIRA"></textarea>
+        <div class="linha-botoes" style="margin-top:10px">
+          <button class="btn btn-principal" id="btn-paradas">Cruzar paradas com o apontamento</button>
+          <input type="file" id="arquivo-paradas" class="campo-arquivo">
+          <button class="btn" id="btn-limpar-paradas">Remover paradas</button>
+        </div>
+        <div id="erro-paradas" style="margin-top:10px"></div>
+        <div id="resultado-paradas" style="margin-top:10px"></div>
       </div>
     </div>
 
@@ -467,6 +487,35 @@ details.falhas pre{
     </div>
   </section>
 
+  <!-- ===================== ABA 8 — PARADAS ===================== -->
+  <section class="painel" id="aba-paradas" role="tabpanel" aria-labelledby="tab-paradas" hidden>
+    <div class="cartao">
+      <header><h2>O que explica o tempo sem OF</h2></header>
+      <div class="corpo" id="paradas-alertas"></div>
+    </div>
+    <div class="cartao">
+      <header><h2>Lacunas sem OF e sua explicação</h2><button class="btn btn-mini" data-exportar="lacunas-paradas">Exportar CSV</button></header>
+      <div class="corpo sem-padding">
+        <div class="rolagem" id="tab-lacunas-paradas"></div>
+        <div class="explica">Lacuna é o intervalo entre um apontamento e o seguinte dentro da janela de turno. Quando uma parada apontada cobre esse intervalo, o vazio está explicado. O que sobra é tempo que a fábrica pagou e ninguém registrou.</div>
+      </div>
+    </div>
+    <div class="cartao">
+      <header><h2>Paradas apontadas</h2><button class="btn btn-mini" data-exportar="paradas">Exportar CSV</button></header>
+      <div class="corpo sem-padding">
+        <div class="rolagem" id="tab-paradas-lista"></div>
+        <div class="explica">Parada <b>sobreposta a OF</b> é parada lançada dentro da janela de uma ordem: o tempo aparece como produção no apontamento, mas a máquina estava parada. É esse tempo que o ritmo líquido desconta.</div>
+      </div>
+    </div>
+    <div class="cartao">
+      <header><h2>Ritmo bruto e ritmo líquido por produto</h2><button class="btn btn-mini" data-exportar="liquido">Exportar CSV</button></header>
+      <div class="corpo sem-padding">
+        <div class="rolagem" id="tab-liquido"></div>
+        <div class="explica"><b>Ritmo bruto</b> usa a janela cheia da OF. <b>Ritmo líquido</b> desconta a parada apontada dentro dela &mdash; é a velocidade da máquina produzindo. A diferença entre os dois é o custo da parada no ritmo aparente.</div>
+      </div>
+    </div>
+  </section>
+
 </main>
 
 <footer class="rodape">
@@ -492,11 +541,16 @@ function hhmmParaMinutos(valor){
   if(valor === null || valor === undefined) return {min:null, erro:'campo vazio'};
   var t = String(valor).trim().replace(',', '.');
   if(t === '') return {min:null, erro:'campo vazio'};
-  if(!/^\d{1,2}(\.\d{1,2})?$/.test(t)) return {min:null, erro:'formato fora de HH.MM: "'+valor+'"'};
+  if(!/^\d{1,2}(\.\d{1,8})?$/.test(t)) return {min:null, erro:'formato fora de HH.MM: "'+valor+'"'};
   var partes = t.split('.');
   var h = parseInt(partes[0], 10);
-  var mTxt = (partes[1] === undefined ? '00' : partes[1]);
-  if(mTxt.length === 1) mTxt = mTxt + '0';          /* "16,5" = 16h50 */
+  var dec = (partes[1] === undefined ? '00' : partes[1]);
+  if(dec.length === 1) dec = dec + '0';             /* "16,5" = 16h50 */
+  /* o ERP preenche o campo com zeros à direita ("0,320000" = 0h32). Se as casas
+     extras não forem zero, o campo é decimal de verdade e não HH.MM. */
+  if(dec.length > 2 && /[1-9]/.test(dec.slice(2)))
+    return {min:null, erro:'"' + valor + '" tem casas decimais além de HH.MM — parece hora decimal, não HH.MM'};
+  var mTxt = dec.slice(0, 2);
   var m = parseInt(mTxt, 10);
   if(m > 59) return {min:null, erro:'minuto ' + m + ' maior que 59 em "' + valor + '" — campo não é decimal'};
   if(h > 23) return {min:null, erro:'hora ' + h + ' maior que 23 em "' + valor + '"'};
@@ -578,16 +632,38 @@ var PADROES_RUIDO = [
   /^\s*FUNCION[ÁA]RIO\s*$/i, /^\s*QTDE\b/i, /^\s*-{3,}\s*$/, /^\s*={3,}\s*$/
 ];
 
+/** O "exportar para Excel" de vários ERPs gera HTML com extensão .xls.
+ *  Converte a tabela em texto com ";" antes de qualquer outra coisa. */
+function pareceHTML(texto){
+  return /<\s*(table|html|body|tr|td)\b/i.test(String(texto).slice(0, 20000));
+}
+function htmlParaTexto(texto){
+  return String(texto)
+    .replace(/<\s*(script|style)[^>]*>[\s\S]*?<\/\s*\1\s*>/gi, ' ')
+    .replace(/<\s*br\s*\/?\s*>/gi, '\n')
+    .replace(/<\s*\/\s*(td|th)\s*>/gi, ' ; ')
+    .replace(/<\s*\/\s*(tr|table|p|div|h[1-6])\s*>/gi, '\n')
+    .replace(/<[^>]*>/g, '')
+    .replace(/&nbsp;?/gi, ' ').replace(/&amp;?/gi, '&').replace(/&lt;?/gi, '<')
+    .replace(/&gt;?/gi, '>').replace(/&quot;?/gi, '"').replace(/&#(\d+);/g, function(_, n){
+      return String.fromCharCode(parseInt(n, 10));
+    })
+    .replace(/[ \t]+/g, ' ')
+    .replace(/\n{3,}/g, '\n\n');
+}
+
 function parsearRelatorio(texto){
   var diag = {
     linhasTotais:0, lidas:0, ruido:0, estrutura:0, totalizadores:0, vazias:0, falhas:[], avisos:[],
-    subtotais:[], totalGeral:null, layout:null,
+    subtotais:[], totalGeral:null, layout:null, origemHTML:false, formatoBinario:null,
     periodoDe:null, periodoAte:null, emissaoData:null, emissaoHora:null, faseRelatorio:null
   };
   var registros = [];
   if(!texto || !String(texto).trim()) return {registros:registros, diagnostico:diag};
 
-  var linhas = String(texto).replace(/\r\n?/g, '\n').split('\n');
+  var fonte = String(texto);
+  if(pareceHTML(fonte)){ fonte = htmlParaTexto(fonte); diag.origemHTML = true; }
+  var linhas = fonte.replace(/\r\n?/g, '\n').split('\n');
   diag.linhasTotais = linhas.length;
 
   var ctx = {produto:null, descricao:null, maquina:null, maquinaDescricao:null,
@@ -673,6 +749,18 @@ function parsearRelatorio(texto){
 
   if(!diag.layout && registros.length) diag.layout = 'POR PRODUTO';
   return {registros:registros, diagnostico:diag};
+}
+
+/** Identifica arquivos que não são texto, para orientar em vez de falhar em silêncio. */
+function detectarFormatoBinario(bytes){
+  var b = bytes;
+  if(b.length >= 4){
+    if(b[0] === 0x25 && b[1] === 0x50 && b[2] === 0x44 && b[3] === 0x46) return 'PDF';
+    if(b[0] === 0xD0 && b[1] === 0xCF && b[2] === 0x11 && b[3] === 0xE0) return 'Excel ou Word antigo (.xls / .doc)';
+    if(b[0] === 0x50 && b[1] === 0x4B && b[2] === 0x03 && b[3] === 0x04) return 'Excel ou Word novo (.xlsx / .docx)';
+    if(b[0] === 0x7B && b[1] === 0x5C && b[2] === 0x72 && b[3] === 0x74) return 'RTF';
+  }
+  return null;
 }
 
 function ehRuido(linha){
@@ -901,6 +989,7 @@ function construirOrdens(registros){
                : o.duracaoZero  ? 'duracao-zero'
                : o.partida      ? 'partida' : 'ok';
     o.pendente = ['hora-invalida','virada-dia','aberta','incompleta','duracao-zero'].indexOf(o.situacao) > -1;
+    o.minutosParada = 0; o.paradas = [];
     ordens.push(o);
   });
 
@@ -926,6 +1015,60 @@ function marcar(ordem, tipo, severidade, titulo, texto){
 }
 function temAnomalia(ordem, tipo){
   return ordem.anomalias.some(function(a){ return a.tipo === tipo; });
+}
+
+/** OF de duração zero grudada no horário de outra OF do mesmo operador e máquina.
+ *  É o rateio do ERP quando a furadeira roda um lote de execução único em vez de
+ *  abrir OF por OF — típico de ordem de assistência. Não é erro de apontamento:
+ *  o tempo dessas peças está dentro da OF do lote. */
+function detectarRateioDeLote(ordens, registros){
+  var porRecursoDia = new Map();
+  registros.forEach(function(r){
+    if(r.horaInicioMin === null || r.horaFimMin === null || r.semFechamento) return;
+    var k = r.maquina + '|' + r.funcionario + '|' + r.dataBR;
+    if(!porRecursoDia.has(k)) porRecursoDia.set(k, []);
+    porRecursoDia.get(k).push(r);
+  });
+
+  ordens.forEach(function(o){
+    if(o.situacao !== 'duracao-zero') return;
+    var leg = o.legs[0];
+    var vizinhos = porRecursoDia.get(leg.maquina + '|' + leg.funcionario + '|' + leg.dataBR) || [];
+    var lote = null;
+    vizinhos.forEach(function(r){
+      if(r.ordem === o.ordem) return;
+      if(r.horaFimMin === leg.horaInicioMin || r.horaInicioMin === leg.horaFimMin) lote = r;
+    });
+    if(!lote) return;
+    o.situacao = 'rateada';
+    o.pendente = false;
+    o.loteDeExecucao = lote.ordem;
+    o.mesmoProdutoDoLote = (lote.produto === o.produto);
+    marcar(o, 'rateio-de-lote', 'info', 'Quantidade rateada em lote de execução',
+      'Duração zero (' + leg.horaInicioTxt + ' a ' + leg.horaFimTxt + ') colada no horário da OF ' + lote.ordem +
+      '. É o rateio do ERP quando a máquina roda um lote de execução único em vez de abrir OF por OF — o caso típico é ordem de assistência, ' +
+      'lançada junto com o lote em produção. As ' + fmt(o.qtdeProduzida, 0) + ' peças foram feitas dentro da janela da OF ' + lote.ordem +
+      (o.mesmoProdutoDoLote ? ', do mesmo produto, então entram no ritmo do lote.'
+                            : ' (produto diferente: ' + lote.produto + '), então o ritmo dessa janela é compartilhado entre os dois itens.'));
+    var alvo = ordens.filter(function(x){ return x.ordem === lote.ordem; })[0];
+    if(alvo){
+      alvo.qtdeRateada = (alvo.qtdeRateada || 0) + o.qtdeProduzida;
+      alvo.ofsRateadas = (alvo.ofsRateadas || []).concat([o.ordem]);
+      if(o.mesmoProdutoDoLote){
+        alvo.qtdeProduzida += o.qtdeProduzida;
+        alvo.horasPadrao += o.horasPadrao;
+        alvo.pecasPorMinuto = alvo.qtdeProduzida / alvo.minutosReais;
+        alvo.pecasPorHora = alvo.pecasPorMinuto * 60;
+        alvo.segPecaReal = (alvo.minutosReais * 60) / alvo.qtdeProduzida;
+        alvo.segPecaPadrao = alvo.horasPadrao > 0 ? (alvo.horasPadrao * 3600) / alvo.qtdeProduzida : null;
+        alvo.aderencia = alvo.horasPadrao > 0 ? (alvo.horasPadrao / alvo.horasReais) * 100 : null;
+        marcar(alvo, 'lote-de-execucao', 'info', 'Lote de execução com OF rateada',
+          'Esta OF é o lote em que a máquina rodou de fato. As ' + fmt(o.qtdeProduzida, 0) + ' peças da OF ' + o.ordem +
+          ' (duração zero, rateio do ERP) foram somadas aqui, porque saíram nesta mesma janela e são do mesmo produto. ' +
+          'Sem essa soma o ritmo apareceria menor do que a máquina realmente entregou.');
+      }
+    }
+  });
 }
 
 /** #2 — tempo padrão que destoa mais de 5x da mediana das OUTRAS OFs do mesmo produto. */
@@ -1111,6 +1254,19 @@ function agregarPorProduto(ordens){
     g.segPecaRealLimpo    = qL ? (mL * 60) / qL : null;
     g.aderenciaLimpo      = mL ? (soma(limpasRitmo, function(o){ return o.horasPadrao; }) / (mL / 60)) * 100 : null;
     g.ofsDescartadasRitmo = elig.length - limpasRitmo.length;
+
+    g.minutosParadaLimpo = soma(limpasRitmo, function(o){ return o.minutosParada || 0; });
+    g.minutosLiquidoLimpo = Math.max(0, mL - g.minutosParadaLimpo);
+    g.pecasPorMinutoLiquido = g.minutosLiquidoLimpo ? qL / g.minutosLiquidoLimpo : null;
+    g.segPecaLiquido = (g.minutosLiquidoLimpo && qL) ? (g.minutosLiquidoLimpo * 60) / qL : null;
+    g.perdaRitmo = (g.pecasPorMinutoLiquido && g.pecasPorMinutoLimpo)
+      ? (1 - g.pecasPorMinutoLimpo / g.pecasPorMinutoLiquido) * 100 : null;
+    g.janelaZeradaPorParada = g.minutosParadaLimpo > 0 && g.minutosLiquidoLimpo === 0;
+    var motivos = [];
+    limpasRitmo.forEach(function(o){
+      (o.paradas || []).forEach(function(pp){ if(motivos.indexOf(pp.motivo) < 0) motivos.push(pp.motivo); });
+    });
+    g.motivosParada = motivos;
 
     /* padrão de referência = mediana das OFs válidas, sem as implausíveis */
     var padroesOF = limpasPadrao.map(function(o){ return o.segPecaPadrao; });
@@ -1377,18 +1533,21 @@ function conferirTotais(registros, diagnostico){
 }
 
 /** Ponto único de entrada do cálculo: registros -> modelo completo. */
-function construirModelo(registros, diagnostico){
+function construirModelo(registros, diagnostico, paradas){
   var ordens = construirOrdens(registros);
   var porNumero = new Map();
   ordens.forEach(function(o){ porNumero.set(o.ordem, o); });
 
+  var turnos = analisarTurnos(registros);
+  var cruzamento = cruzarParadas(ordens, turnos, paradas || []);
+
+  detectarRateioDeLote(ordens, registros);
   detectarPadraoImplausivel(ordens);
   detectarParadaEmbutida(ordens);
   var cadeias = detectarSequenciaColada(registros, porNumero);
 
   var produtos = agregarPorProduto(ordens);
   var pecas    = agregarPorPeca(produtos, ordens);
-  var turnos   = analisarTurnos(registros);
   var maquinas = agregarPorRecurso(ordens, turnos, 'maquina', 'maquinaDescricao');
   var funcionarios = agregarPorRecurso(ordens, turnos, 'funcionario', 'funcionarioNome');
   var conferencia = conferirTotais(registros, diagnostico);
@@ -1402,6 +1561,7 @@ function construirModelo(registros, diagnostico){
     ofsIncompletas: ordens.filter(function(o){ return o.situacao === 'incompleta'; }).length,
     ofsPartidas: ordens.filter(function(o){ return o.partida; }).length,
     ofsDuracaoZero: ordens.filter(function(o){ return o.situacao === 'duracao-zero'; }).length,
+    ofsRateadas: ordens.filter(function(o){ return o.situacao === 'rateada'; }).length,
     ofsHoraInvalida: ordens.filter(function(o){ return o.situacao === 'hora-invalida'; }).length,
     ofsViradaDia: ordens.filter(function(o){ return o.situacao === 'virada-dia'; }).length,
     ofsAnomalas: elig.filter(function(o){ return o.anomalias.length > 0; }).length,
@@ -1421,14 +1581,250 @@ function construirModelo(registros, diagnostico){
   var porTipo = {};
   elig.forEach(function(o){ o.anomalias.forEach(function(a){ porTipo[a.tipo] = (porTipo[a.tipo] || 0) + 1; }); });
   resumo.porTipoAnomalia = porTipo;
+  resumo.temParadas = !!(paradas && paradas.length);
+  resumo.paradasMin = soma(turnos, function(t){ return t.paradasMin || 0; });
+  resumo.paradaEmLacuna = soma(turnos, function(t){ return t.paradaEmLacuna || 0; });
+  resumo.paradaEmOF = soma(turnos, function(t){ return t.paradaEmOF || 0; });
+  resumo.semOFSemExplicacao = soma(turnos, function(t){ return t.semOFSemExplicacao || 0; });
+  resumo.minutosLiquidos = soma(elig, function(o){ return o.temLiquido ? o.minutosLiquidos : o.minutosReais; });
+  resumo.pecasPorMinutoLiquido = resumo.minutosLiquidos ? resumo.pecas / resumo.minutosLiquidos : null;
   resumo.aderencia = resumo.horasReais ? (resumo.horasPadrao / resumo.horasReais) * 100 : null;
   resumo.percSemOF = resumo.janela ? (resumo.semOF / resumo.janela) * 100 : null;
   resumo.pecasPorMinuto = minutos ? resumo.pecas / minutos : null;
 
   return {registros:registros, diagnostico:diagnostico, ordens:ordens, ordensPorNumero:porNumero,
           produtos:produtos, pecas:pecas, turnos:turnos, maquinas:maquinas,
-          funcionarios:funcionarios, cadeias:cadeias, conferencia:conferencia, resumo:resumo};
+          funcionarios:funcionarios, cadeias:cadeias, conferencia:conferencia, resumo:resumo,
+          paradas:paradas || [], cruzamento:cruzamento};
 }
+
+/* ------------------------------------------------------------
+   PARADAS — RELAT. PLANILHAMENTOS PARADAS
+   Segundo relatório, opcional. Mesmo formato HH.MM.
+   Colunas: Funcionário | Data | Ini | Fim | Hr | Máquina | Ordem | Motivo
+   Aceita tanto a exportação em uma linha por parada quanto a colagem do
+   PDF, em que nome e máquina caem numa linha de continuação.
+   ------------------------------------------------------------ */
+var PALAVRAS_MAQUINA = ['FURADEIRA','COLADEIRA','SECCIONADORA','ESQUADREJADEIRA','FRESADORA','FREZADORA',
+  'TORNO','PRENSA','LIXADEIRA','PLAINA','SERRA','ROUTER','CENTRO','USINAGEM','EMBALAGEM','LINHA',
+  'MAQUINA','MÁQUINA','CNC','MONTAGEM','CABINE','ESTUFA','CALIBRADORA','DESTOPADEIRA','REFILADEIRA'];
+
+function normalizarTexto(v){
+  var t = String(v === null || v === undefined ? '' : v).toUpperCase();
+  if(t.normalize) t = t.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  return t.replace(/\s+/g, ' ').trim();
+}
+function chaveNome(v){ return normalizarTexto(v).replace(/[^A-Z0-9]/g, ''); }
+
+/** Separa "NOME DO OPERADOR" de "DESCRIÇÃO DA MÁQUINA" numa mesma cadeia de texto.
+ *  Usa primeiro as máquinas já conhecidas do apontamento; depois palavras-chave. */
+function separarNomeEMaquina(texto, maquinasConhecidas){
+  var t = String(texto).replace(/\s+/g, ' ').trim();
+  var norm = normalizarTexto(t);
+  var i, alvo;
+  for(i = 0; i < (maquinasConhecidas || []).length; i++){
+    alvo = normalizarTexto(maquinasConhecidas[i]);
+    if(!alvo) continue;
+    var pos = norm.indexOf(alvo);
+    if(pos > 0) return {nome:t.slice(0, pos).trim(), maquina:t.slice(pos).trim()};
+    if(pos === 0) return {nome:'', maquina:t};
+  }
+  var palavras = t.split(' ');
+  for(i = 0; i < palavras.length; i++){
+    var p = normalizarTexto(palavras[i]);
+    if(PALAVRAS_MAQUINA.indexOf(p) > -1 && i > 0)
+      return {nome:palavras.slice(0, i).join(' ').trim(), maquina:palavras.slice(i).join(' ').trim()};
+  }
+  return {nome:t, maquina:''};
+}
+
+function parsearParadas(texto, maquinasConhecidas){
+  var diag = {linhasTotais:0, lidas:0, ruido:0, falhas:[], resumo:[], totalRelatorio:null};
+  var paradas = [];
+  if(!texto || !String(texto).trim()) return {paradas:paradas, diagnostico:diag};
+
+  var fonte = String(texto);
+  if(pareceHTML(fonte)) fonte = htmlParaTexto(fonte);
+  var linhas = fonte.replace(/\r\n?/g, '\n').split('\n');
+  diag.linhasTotais = linhas.length;
+
+  var RE_PARADA = /(\d{2}\/\d{2}\/\d{2,4})\s*;?\s*(\d{1,2}[.,]\d{1,2})\s*;?\s*(\d{1,2}[.,]\d{1,2})\s*;?\s*([\d.,]+)/;
+  var ultimo = null;
+
+  for(var i = 0; i < linhas.length; i++){
+    var bruta = linhas[i];
+    var linha = bruta.replace(/[«»]/g, ' ').replace(/ /g, ' ').replace(/\s+/g, ' ').trim();
+    var nLinha = i + 1;
+    if(linha === '' || /^[;\s.-]*$/.test(linha)){ diag.ruido++; continue; }
+
+    /* rodapé de resumo por motivo: "03 SETUP FURADEIRA 7,010000 25.92%" */
+    var mResumo = linha.match(/^(\d{2})\s+(.+?)\s+([\d.,]+)\s+([\d.,]+)\s*%$/);
+    if(mResumo){
+      diag.resumo.push({codigo:mResumo[1], motivo:mResumo[2].replace(/\s+/g, ' ').trim(),
+                        horas:numeroBR(mResumo[3]), percentual:parseFloat(String(mResumo[4]).replace(',', '.'))});
+      diag.ruido++; continue;
+    }
+    if(/^Total\s*:?/i.test(linha) || /%\s*$/.test(linha)){ diag.ruido++; continue; }
+    if(/RELAT|PLANILHAM|CNPJ|I\.E\.|P[áa]gina|^Data\s*:|^Hora\s*:|Per[íi]odo|^Produ[çc][ãa]o|^L[óo]gica|Funcion[áa]rio\s*;|Motivo\s+Parada|^Ordem\s*:/i.test(linha)){
+      diag.ruido++; continue;
+    }
+
+    var m = linha.match(RE_PARADA);
+    if(m){
+      var antes = linha.slice(0, m.index).replace(/;/g, ' ').trim();
+      var depois = linha.slice(m.index + m[0].length).replace(/;/g, ' ').replace(/\s+/g, ' ').trim();
+      var hi = hhmmParaMinutos(m[2]), hf = hhmmParaMinutos(m[3]);
+      var hrInformada = hhmmParaMinutos(m[4]);
+      var data = dataParaISO(m[1]);
+
+      /* depois do Hr pode vir "MÁQUINA ORDEM MOTIVO" (linha única) ou só o motivo (colagem de PDF) */
+      var maquina = '', ordem = null, motivo = depois;
+      var conhecida = null, dn = normalizarTexto(depois);
+      (maquinasConhecidas || []).forEach(function(mq){
+        var alvo = normalizarTexto(mq);
+        if(alvo && dn.indexOf(alvo) === 0 && (!conhecida || alvo.length > normalizarTexto(conhecida).length)) conhecida = mq;
+      });
+      if(conhecida){
+        maquina = depois.slice(0, normalizarTexto(conhecida).length).trim();
+        var resto = depois.slice(maquina.length).trim();
+        var mR = resto.match(/^(\d{1,10})\s+(.+)$/);
+        if(mR){ ordem = mR[1]; motivo = mR[2].trim(); } else { motivo = resto || depois; }
+      }else{
+        /* greedy: a ordem é o ÚLTIMO número isolado, senão "F601 6545" viraria ordem */
+        var mOrdem = depois.match(/^(.*)\s(\d{1,10})\s+([A-Za-zÀ-ÿ][^;]{2,})$/);
+        if(mOrdem){ maquina = mOrdem[1].trim(); ordem = mOrdem[2]; motivo = mOrdem[3].trim(); }
+      }
+      var nome = antes;
+      if(!maquina && antes){
+        var sep = separarNomeEMaquina(antes, maquinasConhecidas);
+        nome = sep.nome || antes; if(sep.maquina) maquina = sep.maquina;
+      }
+
+      var reg = {
+        linhaOrigem:nLinha, funcionarioNome:nome, funcionarioChave:chaveNome(nome),
+        data:data ? data.iso : null, dataBR:data ? data.br : m[1],
+        iniTxt:m[2], fimTxt:m[3], iniMin:hi.min, fimMin:hf.min,
+        minutos:(hi.min !== null && hf.min !== null && hf.min >= hi.min) ? hf.min - hi.min : null,
+        minutosInformados:hrInformada.min, horasInformadas:numeroBR(m[4]),
+        maquinaDescricao:maquina, ordem:(ordem && ordem !== '0') ? ordem : null,
+        motivo:motivo.replace(/\s+/g, ' ').trim() || '(sem motivo)',
+        erros:[].concat(hi.erro ? ['Ini: ' + hi.erro] : [], hf.erro ? ['Fim: ' + hf.erro] : [])
+      };
+      reg.divergenciaMin = (reg.minutos !== null && reg.minutosInformados !== null)
+        ? reg.minutos - reg.minutosInformados : null;
+      paradas.push(reg); diag.lidas++; ultimo = reg;
+      continue;
+    }
+
+    /* linha de continuação da colagem do PDF: "NOME  MÁQUINA  ORDEM" */
+    if(ultimo && (!ultimo.funcionarioNome || !ultimo.maquinaDescricao) && /[A-Za-zÀ-ÿ]/.test(linha)){
+      var cont = linha.replace(/;/g, ' ').replace(/\s+/g, ' ').trim();
+      var mCont = cont.match(/^(.*?)\s(\d{1,10})$/);
+      var corpo = mCont ? mCont[1] : cont;
+      if(mCont && mCont[2] !== '0' && !ultimo.ordem) ultimo.ordem = mCont[2];
+      var sep2 = separarNomeEMaquina(corpo, maquinasConhecidas);
+      if(!ultimo.funcionarioNome && sep2.nome){
+        ultimo.funcionarioNome = sep2.nome; ultimo.funcionarioChave = chaveNome(sep2.nome);
+      }
+      if(!ultimo.maquinaDescricao && sep2.maquina) ultimo.maquinaDescricao = sep2.maquina;
+      diag.ruido++; continue;
+    }
+
+    diag.falhas.push({linha:nLinha, texto:bruta, motivo:'linha não reconhecida como parada, cabeçalho ou resumo'});
+  }
+
+  return {paradas:paradas, diagnostico:diag};
+}
+
+function sobrepor(a1, a2, b1, b2){
+  if(a1 === null || a2 === null || b1 === null || b2 === null) return 0;
+  return Math.max(0, Math.min(a2, b2) - Math.max(a1, b1));
+}
+
+/** Casa cada parada com a janela de turno, com as lacunas sem OF e com as OFs. */
+function cruzarParadas(ordens, turnos, paradas){
+  paradas.forEach(function(p){
+    p.minutosEmLacuna = 0; p.minutosSobrepostos = 0; p.minutosForaDaJanela = 0;
+    p.ofsSobrepostas = []; p.turnoEncontrado = false;
+  });
+  ordens.forEach(function(o){ o.minutosParada = 0; o.paradas = []; });
+  turnos.forEach(function(t){
+    t.paradasMin = 0; t.paradaEmLacuna = 0; t.paradaEmOF = 0; t.paradas = [];
+    t.semOFExplicado = 0; t.semOFSemExplicacao = t.semOF;
+  });
+  if(!paradas || !paradas.length) return {casadas:0, semCasar:0};
+
+  var casadas = 0, semCasar = 0;
+  paradas.forEach(function(p){
+    if(p.iniMin === null || p.fimMin === null) { semCasar++; return; }
+    var alvo = null;
+    turnos.forEach(function(t){
+      if(t.data !== p.dataBR) return;
+      var mesmoNome = p.funcionarioChave && chaveNome(t.funcionarioNome) === p.funcionarioChave;
+      var mesmaMaquina = p.maquinaDescricao &&
+        normalizarTexto(t.maquinaDescricao) === normalizarTexto(p.maquinaDescricao);
+      if(mesmoNome || mesmaMaquina) alvo = t;
+    });
+    if(!alvo){ semCasar++; return; }
+
+    casadas++; p.turnoEncontrado = true; p.maquina = alvo.maquina; p.funcionario = alvo.funcionario;
+    alvo.paradas.push(p);
+    alvo.paradasMin += (p.minutos || 0);
+
+    var dentroJanela = sobrepor(p.iniMin, p.fimMin, alvo.inicioMin, alvo.fimMin);
+    p.minutosForaDaJanela = (p.minutos || 0) - dentroJanela;
+
+    alvo.lacunas.forEach(function(l){
+      var ov = sobrepor(p.iniMin, p.fimMin, l.deMin, l.ateMin);
+      if(ov > 0){
+        p.minutosEmLacuna += ov;
+        l.explicado = (l.explicado || 0) + ov;
+        l.motivos = (l.motivos || []);
+        if(l.motivos.indexOf(p.motivo) < 0) l.motivos.push(p.motivo);
+      }
+    });
+
+    ordens.forEach(function(o){
+      if(o.maquina !== alvo.maquina || o.funcionario !== alvo.funcionario) return;
+      o.legs.forEach(function(leg){
+        if(leg.dataBR !== p.dataBR || leg.semFechamento) return;
+        var ov = sobrepor(p.iniMin, p.fimMin, leg.horaInicioMin, leg.horaFimMin);
+        if(ov > 0){
+          o.minutosParada += ov;
+          p.minutosSobrepostos += ov;
+          if(p.ofsSobrepostas.indexOf(o.ordem) < 0) p.ofsSobrepostas.push(o.ordem);
+          if(o.paradas.indexOf(p) < 0) o.paradas.push(p);
+        }
+      });
+    });
+  });
+
+  turnos.forEach(function(t){
+    t.paradaEmLacuna = soma(t.lacunas, function(l){ return l.explicado || 0; });
+    t.semOFExplicado = t.paradaEmLacuna;
+    t.semOFSemExplicacao = t.semOF - t.paradaEmLacuna;
+    t.paradaEmOF = t.paradasMin - t.paradaEmLacuna;
+  });
+
+  ordens.forEach(function(o){
+    if(!o.elegivel) return;
+    o.minutosLiquidos = Math.max(0, o.minutosReais - o.minutosParada);
+    o.temLiquido = o.minutosParada > 0;
+    o.pecasPorMinutoLiquido = o.minutosLiquidos ? o.qtdeProduzida / o.minutosLiquidos : null;
+    o.segPecaLiquido = (o.minutosLiquidos && o.qtdeProduzida) ? (o.minutosLiquidos * 60) / o.qtdeProduzida : null;
+    if(o.minutosParada > 0 && o.minutosLiquidos === 0){
+      o.paradaCobreTudo = true;
+      marcar(o, 'parada-cobre-of', 'critico', 'Parada cobre toda a janela da OF',
+        'A parada apontada (' + (o.paradas[0] ? o.paradas[0].motivo : 'sem motivo') + ') ocupa os ' + fmt(o.minutosReais, 0) +
+        ' min inteiros desta ordem, mas o apontamento registra ' + fmt(o.qtdeProduzida, 0) +
+        ' peças produzidas no mesmo horário. Os dois lançamentos se contradizem: ou a OF é rateio de um lote maior, ' +
+        'ou a parada foi lançada no horário errado. O ritmo líquido desta ordem não pode ser calculado.');
+    }
+  });
+
+  return {casadas:casadas, semCasar:semCasar};
+}
+
 /* ============================================================
    NUCLEO-FIM
    ============================================================ */
@@ -1438,7 +1834,7 @@ function construirModelo(registros, diagnostico){
    ============================================================ */
 var $  = function(s, r){ return (r || document).querySelector(s); };
 var $$ = function(s, r){ return Array.prototype.slice.call((r || document).querySelectorAll(s)); };
-var ESTADO = {modelo:null, filtroOrdens:'todas'};
+var ESTADO = {modelo:null, filtroOrdens:'todas', textoApontamento:'', paradas:null};
 
 function esc(v){
   return String(v === null || v === undefined ? '' : v)
@@ -1460,6 +1856,7 @@ function selosDaOrdem(o){
   if(o.situacao === 'aberta')        s += selo('Aberta sem fechamento', 'critico', '◔');
   if(o.situacao === 'incompleta')    s += selo('Partida incompleta', 'critico', '⇄');
   if(o.situacao === 'duracao-zero')  s += selo('Duração zero', 'atencao');
+  if(o.situacao === 'rateada')       s += selo('Rateada no lote ' + (o.loteDeExecucao || ''), 'info', '≡');
   if(o.situacao === 'hora-invalida') s += selo('Hora inválida', 'critico');
   if(o.situacao === 'virada-dia')    s += selo('Fim antes do início', 'critico');
   if(o.partida && o.situacao !== 'incompleta') s += selo('Ordem partida (' + o.datas.length + ' datas)', 'info', '⇄');
@@ -1875,6 +2272,117 @@ function definirTodasAsTabelas(){
     totalizador:function(linhas){ return {data:'Total', min:fmt(soma(linhas, function(l){ return l.min; }), 0)}; }
   });
 
+  definirTabela('paradas', {
+    alvo:'#tab-paradas-lista', vazio:'Nenhuma parada lida no relatório.', ordemInicial:'minutos',
+    busca:function(l){ return l.funcionarioNome + ' ' + l.maquinaDescricao + ' ' + l.motivo + ' ' + (l.ordem || ''); },
+    classeLinha:function(l){ return !l.turnoEncontrado ? 'linha-atencao' : (l.minutosSobrepostos > 0 ? 'linha-critica' : ''); },
+    colunas:[
+      {ch:'data', tit:'Data', val:function(l){ return l.dataBR; }},
+      {ch:'funcionarioNome', tit:'Operador', val:function(l){ return l.funcionarioNome; }, larg:180},
+      {ch:'maquinaDescricao', tit:'Máquina', val:function(l){ return l.maquinaDescricao; }, larg:180},
+      {ch:'ini', tit:'Início', val:function(l){ return l.iniMin; },
+       html:function(l){ return '<span class="mono">' + esc(l.iniTxt) + '</span>'; }, csv:function(l){ return l.iniTxt; }},
+      {ch:'fim', tit:'Fim', val:function(l){ return l.fimMin; },
+       html:function(l){ return '<span class="mono">' + esc(l.fimTxt) + '</span>'; }, csv:function(l){ return l.fimTxt; }},
+      {ch:'minutos', tit:'Min reais', tipo:'num', dec:0, val:function(l){ return l.minutos; }},
+      {ch:'minutosInformados', tit:'Min da coluna Hr', tipo:'num', dec:0, val:function(l){ return l.minutosInformados; },
+       html:function(l){
+         if(l.minutosInformados === null) return '—';
+         return fmt(l.minutosInformados, 0) + (l.divergenciaMin ? '<span class="obs">difere ' + fmt(l.divergenciaMin, 0) + ' min do relógio</span>' : '');
+       }},
+      {ch:'motivo', tit:'Motivo', val:function(l){ return l.motivo; }, larg:190},
+      {ch:'ordem', tit:'OF do apontamento', val:function(l){ return l.ordem || ''; }, cls:'mono'},
+      {ch:'situacao', tit:'Onde cai no apontamento', cls:'explicacao', larg:230,
+       val:function(l){ return l.minutosEmLacuna > 0 ? 2 : (l.minutosSobrepostos > 0 ? 1 : 0); },
+       html:function(l){
+         if(!l.turnoEncontrado) return selo('Sem turno correspondente', 'atencao') +
+           '<span class="obs">operador ou máquina não aparece no apontamento importado</span>';
+         var s = '';
+         if(l.minutosEmLacuna > 0) s += selo(fmt(l.minutosEmLacuna, 0) + ' min explicam lacuna', 'ok');
+         if(l.minutosSobrepostos > 0) s += selo(fmt(l.minutosSobrepostos, 0) + ' min dentro de OF', 'critico');
+         if(l.minutosForaDaJanela > 0) s += selo(fmt(l.minutosForaDaJanela, 0) + ' min fora do turno', 'info');
+         return s || selo('Sem correspondência no período', 'atencao');
+       },
+       csv:function(l){
+         return 'lacuna ' + fmt(l.minutosEmLacuna, 0) + ' min | dentro de OF ' + fmt(l.minutosSobrepostos, 0) +
+                ' min | fora da janela ' + fmt(l.minutosForaDaJanela, 0) + ' min';
+       }}
+    ],
+    linhaExtra:function(l){
+      if(!l.ofsSobrepostas || !l.ofsSobrepostas.length) return '';
+      return ICONES.critico + ' <b>Parada lançada dentro da janela da(s) OF ' + esc(l.ofsSobrepostas.join(', ')) +
+        ':</b> esses ' + fmt(l.minutosSobrepostos, 0) + ' min de ' + esc(l.motivo) +
+        ' aparecem como tempo de produção no apontamento. O ritmo bruto dessa(s) ordem(ns) está diluído por parada.';
+    },
+    totalizador:function(linhas){
+      return {data:'Total', minutos:fmt(soma(linhas, function(l){ return l.minutos || 0; }), 0),
+              minutosInformados:fmt(soma(linhas, function(l){ return l.minutosInformados || 0; }), 0)};
+    }
+  });
+
+  definirTabela('lacunas-paradas', {
+    alvo:'#tab-lacunas-paradas', vazio:'Nenhuma lacuna: os apontamentos cobrem a janela de turno inteira.', ordemInicial:'semExplicacao',
+    classeLinha:function(l){ return l.semExplicacao > 0 ? 'linha-atencao' : ''; },
+    colunas:[
+      {ch:'data', tit:'Data', val:function(l){ return l.data; }},
+      {ch:'maquina', tit:'Máquina', val:function(l){ return l.maquina; }, cls:'mono'},
+      {ch:'funcionario', tit:'Operador', val:function(l){ return l.funcionario + ' ' + (l.funcionarioNome || ''); }, larg:180},
+      {ch:'de', tit:'De', val:function(l){ return minutosParaHHMM(l.deMin); }, cls:'mono'},
+      {ch:'ate', tit:'Até', val:function(l){ return minutosParaHHMM(l.ateMin); }, cls:'mono'},
+      {ch:'min', tit:'Min sem OF', tipo:'num', dec:0, val:function(l){ return l.min; }},
+      {ch:'explicado', tit:'Explicado por parada', tipo:'num', dec:0, val:function(l){ return l.explicado || 0; }},
+      {ch:'semExplicacao', tit:'Sem explicação', tipo:'num', dec:0, val:function(l){ return l.semExplicacao; },
+       html:function(l){
+         if(l.semExplicacao <= 0) return selo('Tudo explicado', 'ok');
+         return '<b>' + fmt(l.semExplicacao, 0) + '</b><span class="obs">' + pct(l.min ? l.semExplicacao / l.min * 100 : null) + ' da lacuna</span>';
+       }},
+      {ch:'motivos', tit:'Motivos apontados', cls:'explicacao', larg:220,
+       val:function(l){ return (l.motivos || []).join(', '); },
+       html:function(l){
+         if(!l.motivos || !l.motivos.length) return selo('Nenhuma parada apontada', 'atencao') +
+           '<span class="obs">tempo que ninguém registrou: nem produção, nem parada</span>';
+         return l.motivos.map(function(mo){ return selo(mo, 'ok'); }).join('');
+       }},
+      {ch:'antes', tit:'OF anterior', val:function(l){ return l.antes; }, cls:'mono'},
+      {ch:'depois', tit:'OF seguinte', val:function(l){ return l.depois; }, cls:'mono'}
+    ],
+    totalizador:function(linhas){
+      return {data:'Total', min:fmt(soma(linhas, function(l){ return l.min; }), 0),
+              explicado:fmt(soma(linhas, function(l){ return l.explicado || 0; }), 0),
+              semExplicacao:fmt(soma(linhas, function(l){ return Math.max(0, l.semExplicacao); }), 0)};
+    }
+  });
+
+  definirTabela('liquido', {
+    alvo:'#tab-liquido', vazio:'Nenhum produto com OF válida.', ordemInicial:'perdaRitmo',
+    colunas:[
+      {ch:'produto', tit:'Produto', val:function(l){ return l.produto; }, cls:'mono', larg:98},
+      {ch:'descricao', tit:'Descrição', val:function(l){ return l.descricao || ''; }, cls:'desc', larg:210},
+      {ch:'qtde', tit:'Peças', tipo:'num', dec:0, val:function(l){ return l.qtdeLimpa; }},
+      {ch:'minutos', tit:'Min de janela', tipo:'num', dec:0, val:function(l){ return l.minutosLimpo; }},
+      {ch:'minutosParada', tit:'Min de parada dentro', tipo:'num', dec:0, val:function(l){ return l.minutosParadaLimpo; },
+       html:function(l){
+         if(!l.minutosParadaLimpo) return '—';
+         return '<b>' + fmt(l.minutosParadaLimpo, 0) + '</b><span class="obs">' + esc((l.motivosParada || []).join(', ')) + '</span>';
+       }},
+      {ch:'pecasPorMinutoLimpo', tit:'pç/min bruto', tipo:'num', dec:2, val:function(l){ return l.pecasPorMinutoLimpo; }},
+      {ch:'pecasPorMinutoLiquido', tit:'pç/min líquido', tipo:'num', dec:2, val:function(l){ return l.pecasPorMinutoLiquido; },
+       html:function(l){
+         if(l.janelaZeradaPorParada) return selo('Janela toda coberta por parada', 'critico');
+         return '<span class="grande">' + fmt(l.pecasPorMinutoLiquido, 2) + '</span>';
+       }},
+      {ch:'segPecaLiquido', tit:'s/pç líquido', tipo:'num', dec:2, val:function(l){ return l.segPecaLiquido; }},
+      {ch:'perdaRitmo', tit:'Efeito da parada no ritmo', tipo:'num', dec:1, val:function(l){ return l.perdaRitmo; },
+       html:function(l){
+         if(!l.minutosParadaLimpo) return selo('Sem parada apontada', 'ok');
+         if(l.janelaZeradaPorParada)
+           return selo('Contradição no apontamento', 'critico') +
+             '<span class="obs">produção e parada lançadas no mesmo horário: não sobra minuto para a peça sair</span>';
+         return '<b>' + pct(l.perdaRitmo) + '</b><span class="obs">o ritmo bruto aparece ' + pct(l.perdaRitmo) + ' menor do que a máquina produzindo</span>';
+       }}
+    ]
+  });
+
   definirTabela('tempo', {
     alvo:'#resumo-tempo', vazio:'Sem apontamento válido para compor a janela de turno.',
     colunas:[
@@ -2167,6 +2675,7 @@ function renderImportar(m){
   var d = m.diagnostico, c = m.conferencia;
   $('#bloco-leitura').hidden = false;
   $('#leitura-layout').textContent = 'Layout detectado: ' + (d.layout || '—') +
+    (d.origemHTML ? ' · convertido de HTML' : '') +
     (d.periodoDe ? ' · período ' + d.periodoDe + (d.periodoAte && d.periodoAte !== d.periodoDe ? ' a ' + d.periodoAte : '') : '') +
     (d.emissaoData ? ' · emitido em ' + d.emissaoData + ' ' + (d.emissaoHora || '') : '');
 
@@ -2255,7 +2764,9 @@ function renderResumo(m){
 var ROTULO_ANOMALIA = {
   'padrao-divergente':'padrão entre cores', 'padrao-inconsistente':'padrão entre OFs',
   'padrao-implausivel':'padrão implausível', 'parada-embutida':'parada embutida',
-  'sequencia-colada':'sequência colada', 'ritmo-implausivel':'ritmo implausível'
+  'sequencia-colada':'sequência colada', 'ritmo-implausivel':'ritmo implausível',
+  'rateio-de-lote':'rateio de lote', 'lote-de-execucao':'lote de execução',
+  'parada-cobre-of':'parada cobre a OF'
 };
 function resumoAnomalias(r){
   var t = r.porTipoAnomalia || {};
@@ -2299,6 +2810,68 @@ function renderRecursos(m){
     ' Para carga-máquina e sequenciamento, use sempre o ritmo por produto da aba <b>Por produto</b>.';
 }
 
+function renderParadas(m){
+  var temParadas = m.paradas && m.paradas.length;
+  var aba = $('#tab-paradas'), badge = $('#cont-paradas');
+  aba.disabled = !temParadas;
+  if(!temParadas){ badge.hidden = true; return; }
+
+  var lacunas = [];
+  m.turnos.forEach(function(t){
+    t.lacunas.forEach(function(l){
+      lacunas.push({data:t.data, maquina:t.maquina, funcionario:t.funcionario, funcionarioNome:t.funcionarioNome,
+                    deMin:l.deMin, ateMin:l.ateMin, min:l.min, antes:l.antes, depois:l.depois,
+                    explicado:l.explicado || 0, semExplicacao:l.min - (l.explicado || 0), motivos:l.motivos || []});
+    });
+  });
+  dadosTabela('lacunas-paradas', lacunas); renderTabela('lacunas-paradas');
+  dadosTabela('paradas', m.paradas); renderTabela('paradas');
+  dadosTabela('liquido', m.produtos.filter(function(p){ return p.qtdeOFsValidas > 0; })); renderTabela('liquido');
+
+  var r = m.resumo;
+  var semExp = soma(lacunas, function(l){ return Math.max(0, l.semExplicacao); });
+  var explicado = soma(lacunas, function(l){ return l.explicado; });
+  var alertas = [];
+
+  if(explicado > 0)
+    alertas.push({sev:'ok', titulo:fmt(explicado, 0) + ' min de tempo sem OF agora têm nome',
+      texto:'Paradas apontadas cobrem esse tempo dentro das lacunas entre ordens: ' +
+        unicos(lacunas.reduce(function(acc, l){ return acc.concat(l.motivos); }, [])).join(', ') + '.', acao:null});
+
+  if(semExp > 0)
+    alertas.push({sev:semExp > 30 ? 'critico' : 'atencao',
+      titulo:fmt(semExp, 0) + ' min continuam sem explicação',
+      texto:'Tempo dentro da janela de turno que não é produção apontada nem parada apontada. Nem a OF cobre, nem o relatório de paradas.',
+      acao:'É esse número que vale levar para o líder do turno: cada lacuna tem hora de início e fim para conferir com o operador.'});
+
+  if(r.paradaEmOF > 0)
+    alertas.push({sev:'critico', titulo:fmt(r.paradaEmOF, 0) + ' min de parada lançados dentro da janela de OFs',
+      texto:'A parada foi apontada no mesmo horário em que a ordem estava aberta. Como o apontamento da OF não desconta parada, esse tempo entra na conta como se fosse produção e derruba o ritmo aparente da máquina.',
+      acao:'Use o ritmo líquido para programar: ele desconta a parada de dentro da janela.'});
+
+  var semTurno = m.paradas.filter(function(p){ return !p.turnoEncontrado; });
+  if(semTurno.length)
+    alertas.push({sev:'atencao', titulo:plural(semTurno.length, 'parada sem turno correspondente', 'paradas sem turno correspondente'),
+      texto:'Operador ou máquina dessas paradas não aparece no apontamento importado — normalmente porque o relatório de paradas cobre a fábrica inteira e o apontamento foi filtrado por máquina ou fase.',
+      acao:'Se quiser cruzar tudo, importe o apontamento sem filtro de máquina.'});
+
+  var divergentes = m.paradas.filter(function(p){ return p.divergenciaMin && Math.abs(p.divergenciaMin) > 1; });
+  if(divergentes.length)
+    alertas.push({sev:'atencao', titulo:plural(divergentes.length, 'parada com coluna Hr divergente do relógio', 'paradas com coluna Hr divergente do relógio'),
+      texto:'A coluna Hr do relatório de paradas não bate com a diferença entre Ini e Fim: ' +
+        divergentes.slice(0, 3).map(function(p){
+          return p.iniTxt + '→' + p.fimTxt + ' = ' + fmt(p.minutos, 0) + ' min, mas a coluna diz ' + fmt(p.minutosInformados, 0);
+        }).join('; ') + '. O app usa sempre o relógio, como faz com a coluna HORAS do apontamento.',
+      acao:'Mesmo problema de rateio do outro relatório: não use a coluna Hr como fonte.'});
+
+  $('#paradas-alertas').innerHTML = alertas.map(blocoAlerta).join('') ||
+    '<div class="alerta alerta-ok"><span class="ico">✓</span><div class="txt"><h4>Paradas cruzadas</h4><p>Nenhuma ocorrência a destacar.</p></div></div>';
+
+  badge.hidden = false;
+  badge.textContent = m.paradas.length;
+  badge.className = 'contador' + (semExp > 0 || r.paradaEmOF > 0 ? ' alerta' : '');
+}
+
 function renderTudo(m){
   ESTADO.modelo = m;
   enriquecerPendencias(m);
@@ -2309,13 +2882,14 @@ function renderTudo(m){
   dadosTabela('ordens', m.ordens); renderTabela('ordens');
   dadosTabela('pendencias', m.ordens.filter(function(o){ return o.pendente; })); renderTabela('pendencias');
   renderRecursos(m);
+  renderParadas(m);
 
   var pend = $('#cont-pend'), np = m.resumo.ofsPendentes;
   pend.hidden = !np; pend.textContent = np; pend.className = 'contador' + (np ? ' alerta' : '');
   var cp = $('#cont-peca'), nd = m.resumo.pecasDivergentes;
   cp.hidden = !nd; cp.textContent = nd; cp.className = 'contador' + (nd ? ' alerta' : '');
 
-  $$('.abas button').forEach(function(b){ b.disabled = false; });
+  $$('.abas button').forEach(function(b){ if(b.dataset.aba !== 'paradas') b.disabled = false; });
 
   var d = m.diagnostico;
   $('#topo-meta').innerHTML = 'Período <b>' + esc(d.periodoDe || '—') +
@@ -2343,26 +2917,72 @@ function irPara(aba){
 function processar(texto){
   var alvo = $('#erro-entrada');
   if(!texto || !texto.trim()){
-    alvo.innerHTML = blocoAlerta({sev:'atencao', titulo:'Nada para processar',
-      texto:'Cole o texto do relatório ou carregue um arquivo .txt/.csv exportado do ERP.', acao:null});
+    alvo.innerHTML = blocoAlerta({sev:'atencao', titulo:'O campo está vazio',
+      texto:'Nada foi colado nem carregado. Se você selecionou um arquivo e o campo continuou vazio, o formato não é texto ' +
+        '(PDF e Excel não abrem direto): abra o relatório, selecione o conteúdo e cole aqui — a colagem direta do visualizador funciona.',
+      acao:'Use "Carregar dados de exemplo" para ver a ferramenta funcionando com um dia real antes de trazer o seu relatório.'});
     return;
   }
   try{
     var saida = parsearRelatorio(texto);
     if(!saida.registros.length){
+      var previa = texto.replace(/\r/g, '').split('\n').filter(function(l){ return l.trim(); }).slice(0, 6);
       alvo.innerHTML = blocoAlerta({sev:'critico', titulo:'Nenhuma linha de apontamento reconhecida',
-        texto:'O texto foi lido, mas nenhuma linha tinha o formato esperado (número da OF, quantidade, data dd/mm/aa, máquina, funcionário, HR.INICIO, HR.FIM, fase, horas). Foram ' +
-          saida.diagnostico.falhas.length + ' linha(s) com falha de leitura.',
-        acao:'Confira se o texto colado é o REL. PLANILHAMENTO POR PRODUTO ou POR FUNCIONÁRIO completo.'});
+        texto:'O texto foi lido (' + saida.diagnostico.linhasTotais + ' linhas' +
+          (saida.diagnostico.origemHTML ? ', convertidas de HTML' : '') +
+          '), mas nenhuma tinha o formato esperado: número da OF, quantidade, data dd/mm/aa, máquina, funcionário, HR.INICIO, HR.FIM, fase e horas.',
+        acao:'Confira se é o REL. PLANILHAMENTO POR PRODUTO ou POR FUNCIONÁRIO completo, com as linhas de ordem.'}) +
+        '<details class="falhas" open style="margin-top:8px"><summary>Primeiras linhas do que foi lido</summary><pre>' +
+        esc(previa.join('\n')) + '</pre></details>';
       $('#bloco-leitura').hidden = true;
       return;
     }
     alvo.innerHTML = '';
-    renderTudo(construirModelo(saida.registros, saida.diagnostico));
+    ESTADO.textoApontamento = texto;
+    renderTudo(construirModelo(saida.registros, saida.diagnostico, ESTADO.paradas));
     irPara('resumo');
   }catch(e){
     alvo.innerHTML = blocoAlerta({sev:'critico', titulo:'Erro ao processar o relatório',
       texto:String(e && e.message ? e.message : e), acao:'Envie o trecho do relatório que causou o erro para ajuste do parser.'});
+  }
+}
+
+function processarParadas(texto){
+  var alvo = $('#erro-paradas'), res = $('#resultado-paradas');
+  if(!ESTADO.modelo){
+    alvo.innerHTML = blocoAlerta({sev:'atencao', titulo:'Importe primeiro o apontamento',
+      texto:'As paradas só fazem sentido cruzadas com as ordens: é o apontamento que define a janela de turno e as lacunas.',
+      acao:'Processe o REL. PLANILHAMENTO no campo acima e depois volte aqui.'});
+    return;
+  }
+  if(!texto || !texto.trim()){
+    alvo.innerHTML = blocoAlerta({sev:'atencao', titulo:'O campo de paradas está vazio',
+      texto:'Cole o RELAT. PLANILHAMENTOS PARADAS do mesmo período.', acao:null});
+    return;
+  }
+  try{
+    var maquinas = unicos(ESTADO.modelo.registros.map(function(r){ return r.maquinaDescricao; }).filter(Boolean));
+    var saida = parsearParadas(texto, maquinas);
+    if(!saida.paradas.length){
+      alvo.innerHTML = blocoAlerta({sev:'critico', titulo:'Nenhuma parada reconhecida',
+        texto:'O texto foi lido (' + saida.diagnostico.linhasTotais + ' linhas), mas nenhuma tinha data, hora de início, hora de fim e motivo.',
+        acao:'Confira se é o RELAT. PLANILHAMENTOS PARADAS. Se veio de PDF, cole o texto selecionado do visualizador.'});
+      return;
+    }
+    alvo.innerHTML = '';
+    ESTADO.paradas = saida.paradas;
+    var m = construirModelo(ESTADO.modelo.registros, ESTADO.modelo.diagnostico, saida.paradas);
+    renderTudo(m);
+    res.innerHTML = blocoAlerta({sev:'ok',
+      titulo:fmt(saida.diagnostico.lidas, 0) + ' paradas lidas, ' + fmt(m.cruzamento.casadas, 0) + ' cruzadas com o apontamento',
+      texto:fmt(m.resumo.paradaEmLacuna, 0) + ' min explicam lacunas sem OF e ' + fmt(m.resumo.paradaEmOF, 0) +
+        ' min estavam lançados dentro da janela de ordens. Restam ' + fmt(m.resumo.semOFSemExplicacao, 0) + ' min sem explicação.' +
+        (saida.diagnostico.falhas.length ? ' ' + saida.diagnostico.falhas.length + ' linha(s) não foram lidas.' : ''),
+      acao:null, ir:'paradas', irTexto:'Ver o cruzamento'});
+    irPara('paradas');
+  }catch(e){
+    alvo.innerHTML = blocoAlerta({sev:'critico', titulo:'Erro ao processar as paradas',
+      texto:String(e && e.message ? e.message : e), acao:'Envie o trecho que causou o erro para ajuste do parser.'});
   }
 }
 
@@ -2388,22 +3008,84 @@ function ligarEventos(){
     $('#arquivo').value = '';
   });
 
-  $('#arquivo').addEventListener('change', function(ev){
-    var f = ev.target.files && ev.target.files[0];
+  function carregarArquivo(f){
     if(!f) return;
     var fr = new FileReader();
     fr.onload = function(){
-      var buf = fr.result, txt;
+      var buf = fr.result, bytes = new Uint8Array(buf), txt;
+      var binario = detectarFormatoBinario(bytes);
+      if(binario){
+        $('#bloco-leitura').hidden = true;
+        $('#erro-entrada').innerHTML = blocoAlerta({sev:'critico',
+          titulo:'"' + f.name + '" é um arquivo ' + binario + ', não texto',
+          texto:'O app lê o relatório em texto (.txt, .csv, .prn) ou o "exportar para Excel" que na verdade é HTML. ' +
+            'Um ' + binario + ' guarda o conteúdo em formato compactado que o navegador não consegue abrir sozinho.',
+          acao:binario === 'PDF'
+            ? 'Abra o PDF, selecione todo o texto do relatório (Ctrl+A, Ctrl+C) e cole no campo acima — o app lê a colagem direta do visualizador.'
+            : 'No ERP, exporte o mesmo relatório como TXT ou CSV. Se só houver Excel, abra a planilha, selecione as células e cole no campo acima.'});
+        return;
+      }
       try{
         txt = new TextDecoder('utf-8').decode(buf);
-        if(txt.indexOf('�') > -1) txt = new TextDecoder('windows-1252').decode(buf);
-      }catch(e){ txt = String(buf); }
+        if(txt.indexOf('\uFFFD') > -1) txt = new TextDecoder('windows-1252').decode(buf);
+      }catch(e){ txt = ''; }
+      if(!txt.trim()){
+        $('#erro-entrada').innerHTML = blocoAlerta({sev:'critico', titulo:'"' + f.name + '" está vazio',
+          texto:'O arquivo foi lido, mas não tem conteúdo de texto.', acao:'Confira se a exportação do ERP gerou o arquivo completo.'});
+        return;
+      }
       $('#entrada').value = txt;
       processar(txt);
     };
     fr.onerror = function(){
       $('#erro-entrada').innerHTML = blocoAlerta({sev:'critico', titulo:'Não foi possível ler o arquivo',
-        texto:'O navegador recusou a leitura. Abra o arquivo em um editor de texto e cole o conteúdo no campo acima.', acao:null});
+        texto:'O navegador recusou a leitura de "' + f.name + '".',
+        acao:'Abra o arquivo em um editor de texto e cole o conteúdo no campo acima.'});
+    };
+    fr.readAsArrayBuffer(f);
+  }
+
+  $('#arquivo').addEventListener('change', function(ev){
+    carregarArquivo(ev.target.files && ev.target.files[0]);
+  });
+
+  var campo = $('#entrada');
+  ['dragenter','dragover'].forEach(function(ev){
+    campo.addEventListener(ev, function(e){ e.preventDefault(); campo.classList.add('arrastando'); });
+  });
+  ['dragleave','drop'].forEach(function(ev){
+    campo.addEventListener(ev, function(e){ e.preventDefault(); campo.classList.remove('arrastando'); });
+  });
+  campo.addEventListener('drop', function(e){
+    var f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+    if(f) carregarArquivo(f);
+  });
+
+  $('#btn-paradas').addEventListener('click', function(){ processarParadas($('#entrada-paradas').value); });
+  $('#btn-limpar-paradas').addEventListener('click', function(){
+    $('#entrada-paradas').value = ''; $('#erro-paradas').innerHTML = ''; $('#resultado-paradas').innerHTML = '';
+    $('#arquivo-paradas').value = ''; ESTADO.paradas = null;
+    if(ESTADO.modelo) renderTudo(construirModelo(ESTADO.modelo.registros, ESTADO.modelo.diagnostico, null));
+  });
+  $('#arquivo-paradas').addEventListener('change', function(ev){
+    var f = ev.target.files && ev.target.files[0];
+    if(!f) return;
+    var fr = new FileReader();
+    fr.onload = function(){
+      var bytes = new Uint8Array(fr.result), bin = detectarFormatoBinario(bytes), txt;
+      if(bin){
+        $('#erro-paradas').innerHTML = blocoAlerta({sev:'critico',
+          titulo:'"' + f.name + '" é um arquivo ' + bin + ', não texto',
+          texto:'O app lê texto. Abra o relatório, selecione o conteúdo e cole no campo acima.',
+          acao:bin === 'PDF' ? 'No PDF: Ctrl+A, Ctrl+C e cole aqui — a colagem do visualizador é reconhecida.' : 'Ou exporte como TXT/CSV no ERP.'});
+        return;
+      }
+      try{
+        txt = new TextDecoder('utf-8').decode(fr.result);
+        if(txt.indexOf('\uFFFD') > -1) txt = new TextDecoder('windows-1252').decode(fr.result);
+      }catch(e){ txt = ''; }
+      $('#entrada-paradas').value = txt;
+      processarParadas(txt);
     };
     fr.readAsArrayBuffer(f);
   });

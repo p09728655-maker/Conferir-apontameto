@@ -13,7 +13,7 @@ if (ini < 0 || fim < 0) { console.error('marcadores do núcleo não encontrados'
 const nucleo = html.slice(html.indexOf('*/', ini) + 2, html.lastIndexOf('/*', fim));
 
 const api = new Function(nucleo + `
-  return {parsearRelatorio, construirModelo, hhmmParaMinutos, numeroBR, mediana};
+  return {parsearRelatorio, parsearParadas, construirModelo, hhmmParaMinutos, numeroBR, mediana};
 `)();
 
 const AMOSTRA = readFileSync(join(raiz, 'testes', 'amostra-19-08.txt'), 'utf8');
@@ -70,8 +70,13 @@ console.log('\n== classificacao das ordens ==');
 const of = n => m.ordens.find(o => o.ordem === n);
 ok('801405 = partida incompleta', of('801405').situacao === 'incompleta', of('801405').situacao);
 ok('801405 fora dos calculos', of('801405').elegivel === false);
-ok('801510 = duracao zero', of('801510').situacao === 'duracao-zero', of('801510').situacao);
-ok('801510 fora dos calculos', of('801510').elegivel === false);
+ok('801510 = rateada em lote de execucao', of('801510').situacao === 'rateada', of('801510').situacao);
+ok('801510 aponta o lote 801459', of('801510').loteDeExecucao === '801459', String(of('801510').loteDeExecucao));
+ok('801510 nao e pendencia', of('801510').pendente === false);
+ok('801510 fora do ritmo proprio', of('801510').elegivel === false);
+ok('801459 absorve as 3 pecas rateadas', of('801459').qtdeProduzida === 378, String(of('801459').qtdeProduzida));
+ok('801459 registra a OF rateada', (of('801459').ofsRateadas || []).indexOf('801510') > -1);
+ok('801459 ritmo recalculado 378/34', perto(of('801459').pecasPorMinuto, 378/34, 1e-9), String(of('801459').pecasPorMinuto));
 ok('18 OFs elegiveis', m.resumo.ofsValidas === 18, 'n=' + m.resumo.ofsValidas);
 ok('nenhuma OF aberta na amostra', m.resumo.ofsAbertas === 0);
 
@@ -180,6 +185,43 @@ if (l.registros[0]) {
 console.log('\n== linhas ilegiveis nao somem ==');
 const sujo = api.parsearRelatorio('PRODUTO : 111.222.333\nDESC QUALQUER\n999999 ; xx ; yy\ntexto solto que nao e nada');
 ok('linhas problematicas reportadas', sujo.diagnostico.falhas.length >= 1, 'n=' + sujo.diagnostico.falhas.length);
+
+console.log('\n== relatorio de paradas ==');
+const AMOSTRA_PARADAS = readFileSync(join(raiz, 'testes', 'amostra-paradas-19-08.txt'), 'utf8');
+const maquinas = [...new Set(registros.map(r => r.maquinaDescricao).filter(Boolean))];
+const pp = api.parsearParadas(AMOSTRA_PARADAS, maquinas);
+ok('8 paradas lidas', pp.diagnostico.lidas === 8, 'n=' + pp.diagnostico.lidas);
+ok('resumo por motivo capturado', pp.diagnostico.resumo.length === 3, 'n=' + pp.diagnostico.resumo.length);
+const pm = pp.paradas.filter(x => /MAURICIO/.test(x.funcionarioNome));
+ok('3 paradas de MAURICIO', pm.length === 3, 'n=' + pm.length);
+ok('maquina lida sem engolir a ordem', pm.every(x => x.maquinaDescricao === 'FURADEIRA F601 6545 CNC XZ'), JSON.stringify(pm.map(x => x.maquinaDescricao)));
+ok('motivo limpo', pm.every(x => x.motivo === 'SETUP FURADEIRA'), JSON.stringify(pm.map(x => x.motivo)));
+ok('8,53->9,06 = 13 min', pm.some(x => x.iniTxt === '8,53' && x.minutos === 13));
+ok('coluna Hr 0,130000 lida como 13 min', pm.some(x => x.iniTxt === '8,53' && x.minutosInformados === 13));
+ok('linha unica (14,13) tambem lida', pm.some(x => x.iniTxt === '14,13' && x.minutos === 2 && x.ordem === null));
+const div = pp.paradas.find(x => x.iniTxt === '10,49');
+ok('Hr divergente detectada (104 min x 32 min)', div.minutos === 104 && div.minutosInformados === 32 && div.divergenciaMin === 72,
+   div.minutos + '/' + div.minutosInformados);
+ok('7,590000 lido como 7h59', pp.paradas.find(x => x.iniTxt === '5,00').minutosInformados === 479);
+ok('0,339404 NAO e HH.MM (hora decimal)', api.hhmmParaMinutos('0,339404').min === null);
+
+console.log('\n== cruzamento paradas x apontamento ==');
+const mp = api.construirModelo(api.parsearRelatorio(AMOSTRA).registros, api.parsearRelatorio(AMOSTRA).diagnostico, pp.paradas);
+ok('3 paradas cruzadas com o turno', mp.cruzamento.casadas === 3, 'n=' + mp.cruzamento.casadas);
+ok('5 paradas de outros recursos nao cruzam', mp.cruzamento.semCasar === 5, 'n=' + mp.cruzamento.semCasar);
+ok('33 min de parada no turno', mp.resumo.paradasMin === 33, String(mp.resumo.paradasMin));
+ok('33 min caem dentro de OF', mp.resumo.paradaEmOF === 33, String(mp.resumo.paradaEmOF));
+ok('0 min explicam lacuna', mp.resumo.paradaEmLacuna === 0);
+ok('66 min seguem sem explicacao', mp.resumo.semOFSemExplicacao === 66, String(mp.resumo.semOFSemExplicacao));
+const of412 = mp.ordens.find(o => o.ordem === '801412');
+ok('801412 com 18 min de parada dentro', of412.minutosParada === 18, String(of412.minutosParada));
+ok('801412 ritmo liquido 90/1', of412.minutosLiquidos === 1 && of412.pecasPorMinutoLiquido === 90);
+const of458 = mp.ordens.find(o => o.ordem === '801458');
+ok('801458 sinalizada: parada cobre a OF inteira', of458.anomalias.some(a => a.tipo === 'parada-cobre-of'));
+const prPar = mp.produtos.find(p => p.produto === '794.003.070');
+ok('794.003.070 bruto 350/73 e liquido 350/55', perto(prPar.pecasPorMinutoLimpo, 350/73, 1e-9) && perto(prPar.pecasPorMinutoLiquido, 350/55, 1e-9),
+   String(prPar.pecasPorMinutoLiquido));
+ok('sem paradas o modelo continua funcionando', api.construirModelo(registros, diagnostico, null).resumo.paradasMin === 0);
 
 console.log('\n----------------------------------------');
 console.log(falhas === 0 ? `TODOS OS ${testes} TESTES PASSARAM` : `${falhas} de ${testes} TESTES FALHARAM`);

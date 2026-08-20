@@ -27,10 +27,26 @@ O tempo real só existe na diferença `HR.FIM − HR.INICIO`, que está no forma
 | 4 | Sequência colada | HR.FIM de uma OF = HR.INICIO da seguinte por mais de 2 h |
 | 5 | Padrão inconsistente entre OFs do mesmo item | Mesmo código com tempos padrão diferentes no período |
 | 6 | Ritmo real implausível | Duração real mais de 2,5× **mais rápida** que a mediana das gêmeas |
+| 7 | Rateio de lote de execução | OF de duração zero colada no horário de outra: o ERP rateia o tempo quando a máquina roda um lote único em vez de abrir OF por OF (típico de assistência). A quantidade entra no ritmo do lote |
+| 8 | Parada cobre a OF inteira | Produção e parada lançadas no mesmo horário, sem minuto sobrando para a peça sair |
 
 Além disso: ordens abertas, pernas de ordem partida sem contraparte, duração zero,
 hora fora do formato HH.MM, apontamentos sobrepostos, tempo sem OF e conferência de
 totais em três vias (soma das linhas × subtotais do relatório × rodapé).
+
+## Relatório de paradas (opcional)
+
+Cole também o **RELAT. PLANILHAMENTOS PARADAS** do mesmo período. O app cruza os dois
+e responde o que o apontamento sozinho não responde:
+
+- quanto do **tempo sem OF** é setup, manutenção, café ou banheiro apontado — e quanto
+  continua sem explicação nenhuma;
+- quanta parada foi lançada **dentro** da janela de uma OF, onde entra na conta como se
+  fosse produção;
+- **ritmo líquido** por produto: peças por minuto descontando a parada de dentro da janela.
+
+Aceita tanto a exportação em uma linha por parada quanto a colagem do PDF, em que nome e
+máquina caem numa linha de continuação.
 
 ## Estrutura
 
