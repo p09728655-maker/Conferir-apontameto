@@ -1,0 +1,2445 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Análise de Apontamento de Produção — Patrimar Móveis</title>
+<style>
+/* ============================================================
+   1. TOKENS E BASE
+   ============================================================ */
+:root{
+  /* Identidade Patrimar — uso exclusivo de marca, nunca status */
+  --patrimar-vermelho:#DB2126;
+  --patrimar-bordeaux:#A8140F;
+  --patrimar-areia:#F7ECC0;
+  --patrimar-grafite:#1F2328;
+
+  /* Neutros */
+  --tinta:#1F2328; --tinta-2:#4A5157; --tinta-3:#767E85;
+  --papel:#FFFFFF; --papel-2:#F4F6F7; --papel-3:#E9ECEF; --papel-4:#DDE2E6;
+  --linha:#D3D9DE; --linha-forte:#B6BEC5;
+
+  /* Status — deliberadamente distintos do vermelho de marca.
+     Crítico é vinho/bordô frio (#7B1E3D), não o #DB2126 institucional. */
+  --critico:#7B1E3D; --critico-bg:#F8EAEF; --critico-borda:#A83A5C;
+  --atencao:#8A5200; --atencao-bg:#FDF3DE; --atencao-borda:#D89B12;
+  --ok:#14634A; --ok-bg:#E6F2EC; --ok-borda:#2A8C68;
+  --info:#1B4F72; --info-bg:#E9F1F7; --info-borda:#3D7EA6;
+
+  --raio:4px;
+  --sombra:0 1px 2px rgba(31,35,40,.08);
+}
+*,*::before,*::after{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{
+  font-family:'Calibri','Carlito','Segoe UI',system-ui,-apple-system,sans-serif;
+  font-size:15px; line-height:1.45; color:var(--tinta); background:var(--papel-2);
+  -webkit-font-smoothing:antialiased;
+}
+h1,h2,h3,h4{margin:0; font-weight:700; line-height:1.25}
+p{margin:0 0 8px}
+a{color:var(--info)}
+button{font-family:inherit; font-size:inherit}
+.num{font-variant-numeric:tabular-nums; font-feature-settings:"tnum"}
+
+/* ============================================================
+   2. ESTRUTURA
+   ============================================================ */
+.topo{
+  background:var(--patrimar-grafite); color:#fff;
+  border-bottom:3px solid var(--patrimar-vermelho);
+  padding:10px 18px; display:flex; flex-wrap:wrap; gap:14px;
+  align-items:center; justify-content:space-between;
+}
+.marca{display:flex; align-items:center; gap:12px}
+.marca-bloco{
+  width:8px; height:34px; background:var(--patrimar-vermelho);
+  border-radius:2px; flex:none;
+}
+.marca-txt strong{display:block; font-size:14px; letter-spacing:.10em; text-transform:uppercase}
+.marca-txt span{display:block; font-size:13px; color:#C6CCD2}
+.topo-meta{font-size:13px; color:#C6CCD2; text-align:right; max-width:52ch}
+.topo-meta b{color:#fff; font-weight:600}
+
+.abas{
+  display:flex; flex-wrap:wrap; gap:2px; background:var(--papel);
+  border-bottom:1px solid var(--linha); padding:0 12px; position:sticky; top:0; z-index:20;
+}
+.abas button{
+  appearance:none; border:0; background:none; cursor:pointer;
+  padding:11px 14px 9px; color:var(--tinta-2); font-weight:600; font-size:14px;
+  border-bottom:3px solid transparent; display:flex; align-items:center; gap:7px;
+}
+.abas button:hover{color:var(--patrimar-bordeaux); background:var(--papel-2)}
+.abas button[aria-selected="true"]{color:var(--patrimar-grafite); border-bottom-color:var(--patrimar-vermelho)}
+.abas button:disabled{opacity:.42; cursor:not-allowed}
+.abas .contador{
+  font-size:11px; font-weight:700; padding:1px 6px; border-radius:9px;
+  background:var(--papel-3); color:var(--tinta-2); min-width:20px; text-align:center;
+}
+.abas .contador.alerta{background:var(--critico-bg); color:var(--critico)}
+
+main{padding:16px; max-width:1720px; margin:0 auto}
+.painel[hidden]{display:none}
+
+.cartao{
+  background:var(--papel); border:1px solid var(--linha); border-radius:var(--raio);
+  box-shadow:var(--sombra); margin:0 0 14px; overflow:hidden;
+}
+.cartao > header{
+  padding:10px 14px; border-bottom:1px solid var(--linha); background:var(--papel);
+  display:flex; flex-wrap:wrap; gap:10px; align-items:baseline; justify-content:space-between;
+}
+.cartao > header h2{font-size:16px}
+.cartao > header h3{font-size:15px}
+.cartao .corpo{padding:14px}
+.cartao .corpo.sem-padding{padding:0}
+.dica{font-size:13px; color:var(--tinta-2); margin:0 0 10px}
+.dica:last-child{margin-bottom:0}
+.rotulo-secao{
+  font-size:11px; letter-spacing:.09em; text-transform:uppercase;
+  color:var(--tinta-3); font-weight:700; margin:0 0 6px;
+}
+
+/* ============================================================
+   3. CONTROLES
+   ============================================================ */
+.btn{
+  appearance:none; cursor:pointer; border:1px solid var(--linha-forte); background:var(--papel);
+  color:var(--tinta); padding:7px 13px; border-radius:var(--raio); font-weight:600; font-size:14px;
+}
+.btn:hover{background:var(--papel-2)}
+.btn-principal{background:var(--patrimar-vermelho); border-color:var(--patrimar-bordeaux); color:#fff}
+.btn-principal:hover{background:var(--patrimar-bordeaux)}
+.btn-mini{padding:4px 9px; font-size:13px; font-weight:600}
+.btn:disabled{opacity:.5; cursor:not-allowed}
+.linha-botoes{display:flex; flex-wrap:wrap; gap:8px; align-items:center}
+textarea, input[type=text], input[type=search], select{
+  font-family:'Consolas','Courier New',monospace; font-size:13px; color:var(--tinta);
+  border:1px solid var(--linha-forte); border-radius:var(--raio); padding:7px 9px;
+  background:var(--papel); width:100%;
+}
+input[type=search], select{font-family:inherit; font-size:14px}
+textarea{min-height:190px; resize:vertical; line-height:1.4; white-space:pre; overflow-wrap:normal}
+textarea:focus, input:focus, select:focus, .btn:focus-visible, .abas button:focus-visible{
+  outline:2px solid var(--info); outline-offset:1px;
+}
+.campo-arquivo{font-family:inherit; font-size:14px}
+.chips{display:flex; flex-wrap:wrap; gap:6px}
+.chip{
+  appearance:none; cursor:pointer; border:1px solid var(--linha-forte); background:var(--papel);
+  padding:4px 10px; border-radius:12px; font-size:13px; font-weight:600; color:var(--tinta-2);
+}
+.chip[aria-pressed="true"]{background:var(--patrimar-grafite); border-color:var(--patrimar-grafite); color:#fff}
+.barra-tabela{
+  display:flex; flex-wrap:wrap; gap:8px; align-items:center; justify-content:space-between;
+  padding:9px 14px; border-bottom:1px solid var(--linha); background:var(--papel-2);
+}
+.barra-tabela .busca{max-width:290px}
+
+/* ============================================================
+   4. ALERTAS E SELOS
+   ============================================================ */
+.alerta{
+  display:flex; gap:11px; align-items:flex-start;
+  border:1px solid var(--linha); border-left-width:5px; border-radius:var(--raio);
+  padding:10px 13px; margin:0 0 9px; background:var(--papel);
+}
+.alerta:last-child{margin-bottom:0}
+.alerta .ico{font-size:16px; line-height:1.3; flex:none; font-weight:700}
+.alerta .txt{flex:1; min-width:0}
+.alerta .txt h4{font-size:14.5px; margin:0 0 3px}
+.alerta .txt p{font-size:13.5px; color:var(--tinta-2); margin:0 0 4px}
+.alerta .txt p:last-child{margin-bottom:0}
+.alerta .txt .acao{font-size:13px; color:var(--tinta); font-weight:600}
+.alerta-critico{border-color:var(--critico-borda); background:var(--critico-bg)}
+.alerta-critico .ico, .alerta-critico h4{color:var(--critico)}
+.alerta-atencao{border-color:var(--atencao-borda); background:var(--atencao-bg)}
+.alerta-atencao .ico, .alerta-atencao h4{color:var(--atencao)}
+.alerta-ok{border-color:var(--ok-borda); background:var(--ok-bg)}
+.alerta-ok .ico, .alerta-ok h4{color:var(--ok)}
+.alerta-info{border-color:var(--info-borda); background:var(--info-bg)}
+.alerta-info .ico, .alerta-info h4{color:var(--info)}
+
+.selo{
+  display:inline-flex; align-items:center; gap:4px; white-space:nowrap;
+  font-size:11.5px; font-weight:700; padding:1px 7px; border-radius:10px;
+  border:1px solid var(--linha-forte); background:var(--papel-3); color:var(--tinta-2);
+  margin:1px 3px 1px 0;
+}
+.selo-critico{background:var(--critico-bg); border-color:var(--critico-borda); color:var(--critico)}
+.selo-atencao{background:var(--atencao-bg); border-color:var(--atencao-borda); color:var(--atencao)}
+.selo-ok{background:var(--ok-bg); border-color:var(--ok-borda); color:var(--ok)}
+.selo-info{background:var(--info-bg); border-color:var(--info-borda); color:var(--info)}
+
+/* ============================================================
+   5. INDICADORES
+   ============================================================ */
+.kpis{display:grid; grid-template-columns:repeat(auto-fill,minmax(178px,1fr)); gap:10px}
+.kpi{border:1px solid var(--linha); border-radius:var(--raio); padding:9px 11px; background:var(--papel)}
+.kpi .rot{font-size:11.5px; text-transform:uppercase; letter-spacing:.06em; color:var(--tinta-3); font-weight:700}
+.kpi .val{font-size:24px; font-weight:700; line-height:1.15; margin-top:2px; font-variant-numeric:tabular-nums}
+.kpi .sub{font-size:12.5px; color:var(--tinta-2); margin-top:2px}
+.kpi.destaque{background:var(--patrimar-areia); border-color:#E2CE84}
+.kpi .val.critico{color:var(--critico)}
+.kpi .val.atencao{color:var(--atencao)}
+.kpi .val.ok{color:var(--ok)}
+
+/* ============================================================
+   6. TABELAS
+   ============================================================ */
+.rolagem{overflow-x:auto; max-width:100%}
+table.tab{border-collapse:collapse; width:100%; font-size:13.5px}
+table.tab th, table.tab td{
+  border-bottom:1px solid var(--linha); padding:6px 9px; text-align:left; vertical-align:top;
+}
+table.tab thead th{
+  position:sticky; top:0; background:var(--papel-3); z-index:2;
+  font-size:11.5px; text-transform:uppercase; letter-spacing:.045em; color:var(--tinta-2);
+  border-bottom:2px solid var(--linha-forte); white-space:nowrap;
+}
+table.tab thead th.ordenavel{cursor:pointer; user-select:none}
+table.tab thead th.ordenavel:hover{background:var(--papel-4)}
+table.tab thead th .seta{color:var(--patrimar-vermelho); font-size:11px}
+table.tab tbody tr:nth-child(even){background:var(--papel-2)}
+table.tab tbody tr:hover{background:var(--patrimar-areia)}
+table.tab td.n, table.tab th.n{text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap}
+table.tab td.c, table.tab th.c{text-align:center}
+table.tab td.forte{font-weight:700}
+table.tab .obs{display:block; font-size:12px; color:var(--tinta-2); margin-top:2px; white-space:normal; max-width:52ch}
+table.tab tr.linha-extra td{
+  border-bottom:2px solid var(--linha); background:var(--papel-2);
+  font-size:12.5px; color:var(--tinta-2); padding:0 9px 8px; white-space:normal;
+}
+table.tab tr.linha-extra td b{color:var(--tinta)}
+table.tab tr.linha-extra.linha-critica td{background:var(--critico-bg)}
+table.tab tr.linha-extra.linha-atencao td{background:var(--atencao-bg)}
+table.tab.com-extra tbody tr:nth-child(even){background:none}
+table.tab.com-extra tbody tr:hover{background:none}
+table.tab.com-extra tbody tr.principal:hover, table.tab.com-extra tbody tr.principal:hover + tr.linha-extra td{background:var(--patrimar-areia)}
+table.tab td.desc{min-width:190px}
+table.tab tr.linha-critica td{background:var(--critico-bg)}
+table.tab tr.linha-atencao td{background:var(--atencao-bg)}
+table.tab tfoot td{
+  border-top:2px solid var(--linha-forte); font-weight:700; background:var(--papel-3);
+  font-variant-numeric:tabular-nums;
+}
+.vazio{padding:22px 14px; text-align:center; color:var(--tinta-2); font-size:14px}
+.mono{font-family:'Consolas','Courier New',monospace; font-size:12.5px}
+.contagem{font-size:13px; color:var(--tinta-2)}
+
+/* ============================================================
+   7. BLOCOS AUXILIARES
+   ============================================================ */
+.grade-2{display:grid; grid-template-columns:repeat(auto-fit,minmax(330px,1fr)); gap:14px}
+.grupo-peca{border:1px solid var(--linha); border-radius:var(--raio); margin:0 0 12px; overflow:hidden}
+.grupo-peca > header{padding:9px 12px; background:var(--papel-3); border-bottom:1px solid var(--linha)}
+.grupo-peca > header h3{font-size:14.5px}
+.grupo-peca > header .desc{font-size:12.5px; color:var(--tinta-2)}
+.grupo-peca.divergente{border-color:var(--critico-borda)}
+.grupo-peca.divergente > header{background:var(--critico-bg)}
+.explica{
+  font-size:13px; color:var(--tinta-2); padding:9px 12px; background:var(--papel-2);
+  border-top:1px solid var(--linha);
+}
+.explica b{color:var(--tinta)}
+details.falhas{border:1px solid var(--linha); border-radius:var(--raio); padding:8px 11px; background:var(--papel-2)}
+details.falhas summary{cursor:pointer; font-weight:600; font-size:13.5px}
+details.falhas pre{
+  margin:8px 0 0; padding:8px; background:var(--papel); border:1px solid var(--linha);
+  border-radius:var(--raio); font-size:12px; overflow-x:auto; white-space:pre-wrap; word-break:break-all;
+}
+.lista-premissas{margin:0; padding-left:20px; font-size:13.5px; color:var(--tinta-2)}
+.lista-premissas li{margin-bottom:5px}
+.lista-premissas b{color:var(--tinta)}
+.rodape{padding:14px 18px; font-size:12.5px; color:var(--tinta-3); text-align:center}
+
+@media (max-width:640px){
+  main{padding:10px}
+  .topo-meta{text-align:left; max-width:none}
+  .kpi .val{font-size:20px}
+}
+@media print{
+  .abas, .barra-tabela, .btn, .chips, .topo-meta{display:none !important}
+  body{background:#fff; font-size:11px}
+  .cartao{break-inside:avoid; box-shadow:none}
+  .painel[hidden]{display:block !important}
+}
+</style>
+</head>
+<body>
+
+<header class="topo">
+  <div class="marca">
+    <span class="marca-bloco" aria-hidden="true"></span>
+    <div class="marca-txt">
+      <strong>Patrimar Móveis</strong>
+      <span>Análise de Apontamento de Produção &middot; PPCP</span>
+    </div>
+  </div>
+  <div class="topo-meta" id="topo-meta">Nenhum relatório carregado. Comece pela aba <b>Importar</b>.</div>
+</header>
+
+<nav class="abas" role="tablist" aria-label="Seções da análise">
+  <button role="tab" id="tab-importar"   aria-selected="true"  data-aba="importar">1 · Importar</button>
+  <button role="tab" id="tab-resumo"     aria-selected="false" data-aba="resumo"    disabled>2 · Resumo do período <span class="contador" id="cont-alertas" hidden>0</span></button>
+  <button role="tab" id="tab-produto"    aria-selected="false" data-aba="produto"   disabled>3 · Por produto</button>
+  <button role="tab" id="tab-peca"       aria-selected="false" data-aba="peca"      disabled>4 · Peça &times; cor <span class="contador" id="cont-peca" hidden>0</span></button>
+  <button role="tab" id="tab-ordens"     aria-selected="false" data-aba="ordens"    disabled>5 · Ordens</button>
+  <button role="tab" id="tab-pendencias" aria-selected="false" data-aba="pendencias" disabled>6 · Pendências <span class="contador" id="cont-pend" hidden>0</span></button>
+  <button role="tab" id="tab-recurso"    aria-selected="false" data-aba="recurso"   disabled>7 · Máquina &amp; operador</button>
+</nav>
+
+<main>
+
+  <!-- ===================== ABA 1 — IMPORTAR ===================== -->
+  <section class="painel" id="aba-importar" role="tabpanel" aria-labelledby="tab-importar">
+    <div class="cartao">
+      <header>
+        <h2>Entrada do relatório</h2>
+        <span class="contagem">REL. PLANILHAMENTO POR PRODUTO ou POR FUNCIONÁRIO</span>
+      </header>
+      <div class="corpo">
+        <p class="dica">Cole o texto do relatório do ERP Industrial ou carregue um arquivo <b>.txt</b> / <b>.csv</b>. Todo o processamento acontece neste navegador — nenhum dado é enviado para fora.</p>
+        <textarea id="entrada" spellcheck="false" aria-label="Texto do relatório" placeholder="PRODUTO : 794.001.116&#10;RACK JOAQUIM TAMPO 1500X336X15 MDP 1 CINAMOMO&#10;801404 ; 90,0000 ; 90,0000 ; 19/08/26 ; FUR16 ;FURADEIRA F601 6545 CNC XZ ; 893 ;MAURICIO CARLOS FERREIRA ; 16,16 ; 16,52 ; 55 ; 0,357750 ; 0,00"></textarea>
+        <div class="linha-botoes" style="margin-top:10px">
+          <button class="btn btn-principal" id="btn-processar">Processar relatório</button>
+          <input type="file" id="arquivo" class="campo-arquivo" accept=".txt,.csv,.prn,.rel,text/plain">
+          <button class="btn" id="btn-exemplo">Carregar dados de exemplo</button>
+          <button class="btn" id="btn-limpar">Limpar</button>
+        </div>
+        <div id="erro-entrada" style="margin-top:10px"></div>
+      </div>
+    </div>
+
+    <div id="bloco-leitura" hidden>
+      <div class="cartao">
+        <header><h2>Resultado da leitura</h2><span class="contagem" id="leitura-layout"></span></header>
+        <div class="corpo">
+          <div class="kpis" id="leitura-kpis"></div>
+          <div class="explica" id="leitura-conta" style="margin-top:12px; border:1px solid var(--linha); border-radius:var(--raio)"></div>
+          <div id="leitura-falhas" style="margin-top:10px"></div>
+        </div>
+      </div>
+
+      <div class="cartao">
+        <header>
+          <h2>Conferência de totais de horas padrão</h2>
+          <button class="btn btn-mini" data-exportar="conferencia">Exportar CSV</button>
+        </header>
+        <div class="corpo">
+          <p class="dica">O relatório traz dois totalizadores próprios (subtotal por produto e rodapé geral). O app <b>não confia em nenhum dos dois</b>: soma as linhas por conta própria e mostra as três apurações lado a lado. Diferença acima de 1% é sinalizada.</p>
+          <div id="conferencia-alertas"></div>
+          <div class="rolagem" id="conferencia-tabela"></div>
+        </div>
+      </div>
+
+      <div class="cartao">
+        <header><h2>Divergência por produto</h2><button class="btn btn-mini" data-exportar="subtotais">Exportar CSV</button></header>
+        <div class="corpo sem-padding">
+          <div class="rolagem" id="subtotais-tabela"></div>
+          <div class="explica">Quando o subtotal do produto é <b>maior</b> que a soma das linhas exibidas, a leitura mais provável é que existam pernas de OF fora do período importado (ordem partida entre dias). Amplie o período do relatório e reimporte para fechar a conta.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="cartao">
+      <header><h2>Premissas aplicadas na leitura do dado</h2></header>
+      <div class="corpo">
+        <ul class="lista-premissas">
+          <li><b>HR.INICIO / HR.FIM são HH.MM, não decimal.</b> 8,53 é lido como 8h53min. Qualquer campo com minuto acima de 59 é sinalizado como inválido e a linha vai para Pendências — nunca é convertido "no chute".</li>
+          <li><b>A coluna HORAS é tempo padrão do ERP</b> (QTDE PROD. &times; tempo padrão do item), nunca tempo real. Tempo real é sempre HR.FIM &minus; HR.INICIO.</li>
+          <li><b>A chave de agregação é a OF, não a data.</b> A mesma OF em datas diferentes tem quantidades, horas padrão e minutos reais somados antes de qualquer indicador.</li>
+          <li><b>HR.FIM = 0,00 ⇒ ordem aberta</b> (apontamento sem fechamento). <b>QTDE PROD. = 0 com HR.FIM válido ⇒ perna de ordem partida</b> cuja contraparte está fora do período: marcada como incompleta. As duas são excluídas de ritmo e aderência e listadas em Pendências.</li>
+          <li><b>Duração zero</b> (HR.INICIO = HR.FIM com quantidade produzida) não gera ritmo infinito: fica fora dos cálculos e vai para Pendências.</li>
+          <li><b>Padrão de referência do produto = mediana</b> do tempo padrão unitário das OFs válidas, descartando as marcadas como padrão implausível. Usar a média ponderada deixaria uma OF corrompida contaminar o produto inteiro.</li>
+          <li><b>Tempo sem OF é apurado por máquina + operador + dia</b>, somando as lacunas entre apontamentos consecutivos. Um total global misturaria máquinas que rodam em paralelo.</li>
+          <li><b>Premissa a confirmar:</b> cor não altera o ciclo de furação, logo peças com o mesmo <span class="mono">AAA.BBB</span> deveriam ter tempo padrão equivalente. É essa premissa que sustenta a aba Peça &times; cor.</li>
+          <li><b>Premissa a confirmar:</b> não há turno cruzando a meia-noite. Linhas com HR.FIM anterior a HR.INICIO são sinalizadas e excluídas, não corrigidas automaticamente com +24h.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== ABA 2 — RESUMO ===================== -->
+  <section class="painel" id="aba-resumo" role="tabpanel" aria-labelledby="tab-resumo" hidden>
+    <div class="cartao">
+      <header><h2>O que exige ação</h2><span class="contagem" id="resumo-qtd-alertas"></span></header>
+      <div class="corpo" id="resumo-alertas"></div>
+    </div>
+    <div class="cartao">
+      <header><h2>Números do período</h2><span class="contagem" id="resumo-escopo"></span></header>
+      <div class="corpo"><div class="kpis" id="resumo-kpis"></div></div>
+    </div>
+    <div class="cartao">
+      <header><h2>Composição do tempo</h2></header>
+      <div class="corpo sem-padding">
+        <div class="rolagem" id="resumo-tempo"></div>
+        <div class="explica">Janela de turno é do primeiro HR.INICIO ao último HR.FIM de cada máquina/operador/dia. <b>Tempo sem OF</b> é a soma das lacunas entre apontamentos dentro dessa janela: nem produção, nem parada apontada — é o tempo que ninguém consegue explicar hoje.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== ABA 3 — POR PRODUTO ===================== -->
+  <section class="painel" id="aba-produto" role="tabpanel" aria-labelledby="tab-produto" hidden>
+    <div class="cartao">
+      <header>
+        <h2>Ritmo e aderência por produto</h2>
+        <button class="btn btn-mini" data-exportar="produtos">Exportar CSV</button>
+      </header>
+      <div class="corpo">
+        <p class="dica">Ritmo real medido pelo relógio (HR.FIM &minus; HR.INICIO), sempre com e sem as OFs anômalas lado a lado. <b>Aderência = horas padrão ÷ horas reais.</b> Abaixo de 100% o padrão do ERP está otimista (a máquina leva mais tempo do que o cadastro prevê); acima de 100%, pessimista.</p>
+        <div class="rolagem" id="tab-produtos"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== ABA 4 — PEÇA x COR ===================== -->
+  <section class="painel" id="aba-peca" role="tabpanel" aria-labelledby="tab-peca" hidden>
+    <div class="cartao">
+      <header>
+        <h2>Comparativo de tempo padrão entre cores da mesma peça</h2>
+        <button class="btn btn-mini" data-exportar="pecas">Exportar CSV</button>
+      </header>
+      <div class="corpo">
+        <p class="dica">O código <span class="mono">AAA.BBB.CCC</span> separa peça física (<span class="mono">AAA.BBB</span>) de cor/acabamento (<span class="mono">CCC</span>). Como a cor não muda o ciclo de furação, tempos padrão diferentes para a mesma peça indicam <b>erro de cadastro</b>, e não diferença de processo. A sugestão de correção usa a mediana do tempo real medido no período.</p>
+        <div id="lista-pecas"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== ABA 5 — ORDENS ===================== -->
+  <section class="painel" id="aba-ordens" role="tabpanel" aria-labelledby="tab-ordens" hidden>
+    <div class="cartao">
+      <header><h2>Ordens de produção</h2><button class="btn btn-mini" data-exportar="ordens">Exportar CSV</button></header>
+      <div class="barra-tabela">
+        <div class="chips" id="filtros-ordens"></div>
+        <input type="search" class="busca" id="busca-ordens" placeholder="Buscar OF, produto ou descrição" aria-label="Buscar ordens">
+      </div>
+      <div class="corpo sem-padding">
+        <div class="rolagem" id="tab-ordens-lista"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== ABA 6 — PENDÊNCIAS ===================== -->
+  <section class="painel" id="aba-pendencias" role="tabpanel" aria-labelledby="tab-pendencias" hidden>
+    <div class="cartao">
+      <header><h2>Apontamentos pendentes</h2><button class="btn btn-mini" data-exportar="pendencias">Exportar CSV</button></header>
+      <div class="corpo">
+        <div id="pendencias-alertas"></div>
+        <div class="rolagem" id="tab-pendencias-lista" style="margin-top:10px"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== ABA 7 — MÁQUINA E OPERADOR ===================== -->
+  <section class="painel" id="aba-recurso" role="tabpanel" aria-labelledby="tab-recurso" hidden>
+    <div class="cartao">
+      <header><h2>Por máquina</h2><button class="btn btn-mini" data-exportar="maquinas">Exportar CSV</button></header>
+      <div class="corpo sem-padding">
+        <div class="rolagem" id="tab-maquinas"></div>
+        <div class="explica" id="aviso-agregado"></div>
+      </div>
+    </div>
+    <div class="cartao">
+      <header><h2>Por funcionário</h2><button class="btn btn-mini" data-exportar="funcionarios">Exportar CSV</button></header>
+      <div class="corpo sem-padding"><div class="rolagem" id="tab-funcionarios"></div></div>
+    </div>
+    <div class="cartao">
+      <header><h2>Lacunas sem OF por máquina, operador e dia</h2><button class="btn btn-mini" data-exportar="lacunas">Exportar CSV</button></header>
+      <div class="corpo sem-padding"><div class="rolagem" id="tab-lacunas"></div></div>
+    </div>
+  </section>
+
+</main>
+
+<footer class="rodape">
+  Ferramenta local de análise de apontamento &middot; Patrimar Móveis Ltda &middot; processamento 100% no navegador
+</footer>
+
+<script>
+"use strict";
+/* ============================================================
+   NUCLEO-INICIO
+   Bloco puro: utilitários, parser, cálculos e detecção de
+   anomalias. Não toca no DOM — pode ser testado isoladamente.
+   ============================================================ */
+
+/* ------------------------------------------------------------
+   UTILITÁRIOS
+   ------------------------------------------------------------ */
+
+/** Converte HH.MM (formato do ERP) para minutos do dia.
+ *  8,53 -> 533 min. Faz a leitura por texto para não depender de
+ *  arredondamento de ponto flutuante. Minuto > 59 é erro, não conversão. */
+function hhmmParaMinutos(valor){
+  if(valor === null || valor === undefined) return {min:null, erro:'campo vazio'};
+  var t = String(valor).trim().replace(',', '.');
+  if(t === '') return {min:null, erro:'campo vazio'};
+  if(!/^\d{1,2}(\.\d{1,2})?$/.test(t)) return {min:null, erro:'formato fora de HH.MM: "'+valor+'"'};
+  var partes = t.split('.');
+  var h = parseInt(partes[0], 10);
+  var mTxt = (partes[1] === undefined ? '00' : partes[1]);
+  if(mTxt.length === 1) mTxt = mTxt + '0';          /* "16,5" = 16h50 */
+  var m = parseInt(mTxt, 10);
+  if(m > 59) return {min:null, erro:'minuto ' + m + ' maior que 59 em "' + valor + '" — campo não é decimal'};
+  if(h > 23) return {min:null, erro:'hora ' + h + ' maior que 23 em "' + valor + '"'};
+  return {min: h * 60 + m, erro:null};
+}
+
+/** Número no padrão brasileiro: 1.234,5678 -> 1234.5678 */
+function numeroBR(valor){
+  if(valor === null || valor === undefined) return null;
+  var t = String(valor).trim().replace(/\s/g, '');
+  if(t === '') return null;
+  if(t.indexOf(',') > -1) t = t.replace(/\./g, '').replace(',', '.');
+  else if((t.match(/\./g) || []).length > 1) t = t.replace(/\./g, '');
+  var n = parseFloat(t);
+  return isNaN(n) ? null : n;
+}
+
+function mediana(lista){
+  var a = lista.filter(function(x){ return x !== null && x !== undefined && isFinite(x); })
+               .slice().sort(function(x, y){ return x - y; });
+  if(!a.length) return null;
+  var m = Math.floor(a.length / 2);
+  return a.length % 2 ? a[m] : (a[m - 1] + a[m]) / 2;
+}
+
+function soma(lista, f){
+  return lista.reduce(function(acc, item){ var v = f(item); return acc + (isFinite(v) ? v : 0); }, 0);
+}
+
+function unicos(lista){
+  var vistos = Object.create(null), saida = [];
+  lista.forEach(function(v){ if(!vistos[v]){ vistos[v] = 1; saida.push(v); } });
+  return saida;
+}
+
+/** dd/mm/aa -> {iso:'2026-08-19', br:'19/08/26'} */
+function dataParaISO(txt){
+  var m = String(txt).trim().match(/^(\d{2})\/(\d{2})\/(\d{2,4})$/);
+  if(!m) return null;
+  var ano = m[3].length === 2 ? (parseInt(m[3], 10) >= 70 ? '19' + m[3] : '20' + m[3]) : m[3];
+  return {iso: ano + '-' + m[2] + '-' + m[1], br: m[1] + '/' + m[2] + '/' + m[3]};
+}
+
+function minutosParaHHMM(min){
+  if(min === null || min === undefined || !isFinite(min)) return null;
+  var neg = min < 0, v = Math.abs(Math.round(min));
+  return (neg ? '-' : '') + String(Math.floor(v / 60)).padStart(2, '0') + ':' + String(v % 60).padStart(2, '0');
+}
+
+/* ------------------------------------------------------------
+   PARSER — parsearRelatorio(texto)
+   Única porta de entrada de dados do app. Devolve registros
+   normalizados + diagnóstico completo da leitura.
+   ------------------------------------------------------------ */
+
+var RE_COD_PRODUTO  = /^\d{3}\.\d{3}\.\d{3}$/;
+var RE_DATA_CAMPO   = /^\d{2}\/\d{2}\/\d{2,4}$/;
+var RE_DATA_QUALQUER= /\d{2}\/\d{2}\/\d{2,4}/;
+var RE_HHMM         = /^\d{1,2}[.,]\d{1,2}$/;
+var RE_NUMERICO     = /^[\d.,]+$/;
+
+/* Linha de dados livre (colagem de PDF, sem ";"). O nome do funcionário
+   é restrito a letras para não confundir com "6545" da descrição da máquina. */
+var RE_LINHA_LIVRE = new RegExp(
+  '^\\s*(\\d{4,12})\\s+([\\d.,]+)(?:\\s+([\\d.,]+))?' +
+  '\\s+(\\d{2}\\/\\d{2}\\/\\d{2,4})' +
+  '\\s+(\\S+)\\s+(.+?)' +
+  '\\s+(\\d{1,6})\\s+([A-Za-zÀ-ÿ][A-Za-zÀ-ÿ.\'\\- ]+?)' +
+  '\\s+(\\d{1,2}[.,]\\d{1,2})\\s+(\\d{1,2}[.,]\\d{1,2})' +
+  '\\s+(\\d{1,3})\\s+([\\d.,]+)(?:\\s+([\\d.,]+))?\\s*$'
+);
+
+var PADROES_RUIDO = [
+  /^[;\s.«»_-]*$/,
+  /CNPJ/i, /INS\s*\.?\s*EST/i, /P[áa]gina\s*:/i, /^\s*Data\s*:/i, /^\s*Hora\s*:/i,
+  /REL\.?\s*PLANILHAMENTO/i, /Per[íi]odo\s+de/i, /^\s*At[ée]\s*:/i, /^\s*Produ[çc][ãa]o\b/i,
+  /^\s*L[óo]gica/i, /^\s*Fase\s*:/i, /PATRIMAR/i, /^\s*ORDEM\b/i, /QTDE\s*ORDEM/i,
+  /HR\.?\s*IN[ÍI]CIO/i, /HR\.?\s*INICIO/i, /VLR\.?\s*CUSTO/i, /^\s*MAQUINA\s*$/i,
+  /^\s*FUNCION[ÁA]RIO\s*$/i, /^\s*QTDE\b/i, /^\s*-{3,}\s*$/, /^\s*={3,}\s*$/
+];
+
+function parsearRelatorio(texto){
+  var diag = {
+    linhasTotais:0, lidas:0, ruido:0, estrutura:0, totalizadores:0, vazias:0, falhas:[], avisos:[],
+    subtotais:[], totalGeral:null, layout:null,
+    periodoDe:null, periodoAte:null, emissaoData:null, emissaoHora:null, faseRelatorio:null
+  };
+  var registros = [];
+  if(!texto || !String(texto).trim()) return {registros:registros, diagnostico:diag};
+
+  var linhas = String(texto).replace(/\r\n?/g, '\n').split('\n');
+  diag.linhasTotais = linhas.length;
+
+  var ctx = {produto:null, descricao:null, maquina:null, maquinaDescricao:null,
+             funcionario:null, funcionarioNome:null, esperandoDescricao:false};
+
+  for(var i = 0; i < linhas.length; i++){
+    var bruta = linhas[i];
+    var linha = bruta.replace(/[«»]/g, ' ').replace(/ /g, ' ').trim();
+    var nLinha = i + 1;
+
+    if(linha === ''){ diag.vazias++; ctx.esperandoDescricao = false; continue; }
+
+    /* 1. metadados de cabeçalho — capturar antes de descartar */
+    var mPer = linha.match(/Per[íi]odo\s+de\s*:?\s*(\d{2}\/\d{2}\/\d{2,4})/i);
+    if(mPer && !diag.periodoDe) diag.periodoDe = mPer[1];
+    var mAte = linha.match(/At[ée]\s*:?\s*(\d{2}\/\d{2}\/\d{2,4})/i);
+    if(mAte && !diag.periodoAte) diag.periodoAte = mAte[1];
+    var mEmiD = linha.match(/(?:^|;|\s)Data\s*:?\s*;?\s*(\d{2}\/\d{2}\/\d{2,4})/i);
+    if(mEmiD && !diag.emissaoData) diag.emissaoData = mEmiD[1];
+    var mEmiH = linha.match(/(?:^|;|\s)Hora\s*:?\s*;?\s*(\d{1,2}:\d{2}(?::\d{2})?)/i);
+    if(mEmiH && !diag.emissaoHora) diag.emissaoHora = mEmiH[1];
+    var mFase = linha.match(/(?:^|;|\s)Fase\s*:?\s*;?\s*(\d{1,3})\s*;*\s*$/i);
+    if(mFase && !diag.faseRelatorio) diag.faseRelatorio = mFase[1];
+
+    /* 2. linha de dados? (começa com número de OF e contém data) */
+    if(/^[;\s]*\d{4,12}[;\s]/.test(linha) && RE_DATA_QUALQUER.test(linha)){
+      ctx.esperandoDescricao = false;
+      var res = parsearLinhaDados(linha, ctx, nLinha);
+      if(res.erro){
+        diag.falhas.push({linha:nLinha, texto:bruta, motivo:res.erro});
+      }else{
+        registros.push(res.registro);
+        diag.lidas++;
+        if(res.layout && !diag.layout) diag.layout = res.layout;
+      }
+      continue;
+    }
+
+    /* 3. totalizadores do próprio relatório */
+    if(/Total\s+geral\s+de\s+horas/i.test(linha)){
+      diag.totalGeral = ultimoNumeroDaLinha(linha);
+      diag.totalizadores++; ctx.esperandoDescricao = false; continue;
+    }
+    if(/Total\s+de\s+horas/i.test(linha)){
+      diag.subtotais.push({produto:ctx.produto, descricao:ctx.descricao, valor:ultimoNumeroDaLinha(linha), linha:nLinha});
+      diag.totalizadores++; ctx.esperandoDescricao = false; continue;
+    }
+
+    /* 4. cabeçalhos de bloco */
+    var mProd = linha.match(/PRODUTO\s*:?\s*;?\s*([\d.]+)\s*;?\s*(.*)$/i);
+    if(mProd){
+      ctx.produto = mProd[1].replace(/[;\s]/g, '');
+      var resto = (mProd[2] || '').replace(/;/g, ' ').trim();
+      if(resto && /[A-Za-zÀ-ÿ]/.test(resto)){ ctx.descricao = resto; ctx.esperandoDescricao = false; }
+      else { ctx.descricao = null; ctx.esperandoDescricao = true; }
+      diag.estrutura++; continue;
+    }
+    var mFunc = linha.match(/FUNCION[ÁA]RIO\s*:?\s*;?\s*(\d{1,6})\s*;?\s*(.*)$/i);
+    if(mFunc){
+      ctx.funcionario = mFunc[1];
+      ctx.funcionarioNome = (mFunc[2] || '').replace(/;/g, ' ').trim() || ctx.funcionarioNome;
+      ctx.esperandoDescricao = false; diag.estrutura++; continue;
+    }
+    var mMaq = linha.match(/M[ÁA]QUINA\s*:?\s*;?\s*(\S+)\s*;?\s*(.*)$/i);
+    if(mMaq && !/HR\./i.test(linha)){
+      ctx.maquina = mMaq[1].replace(/;/g, '');
+      ctx.maquinaDescricao = (mMaq[2] || '').replace(/;/g, ' ').trim() || ctx.maquinaDescricao;
+      ctx.esperandoDescricao = false; diag.estrutura++; continue;
+    }
+
+    /* 5. descrição do produto na linha seguinte ao código */
+    if(ctx.esperandoDescricao && /[A-Za-zÀ-ÿ]/.test(linha) && !ehRuido(linha)){
+      ctx.descricao = linha.replace(/;/g, ' ').replace(/\s{2,}/g, ' ').trim();
+      ctx.esperandoDescricao = false; diag.estrutura++; continue;
+    }
+
+    /* 6. ruído conhecido */
+    if(ehRuido(linha)){ diag.ruido++; continue; }
+
+    /* 7. sobrou: reporta, nunca descarta em silêncio */
+    diag.falhas.push({linha:nLinha, texto:bruta, motivo:'linha não reconhecida como dado, cabeçalho ou totalizador'});
+  }
+
+  if(!diag.layout && registros.length) diag.layout = 'POR PRODUTO';
+  return {registros:registros, diagnostico:diag};
+}
+
+function ehRuido(linha){
+  for(var i = 0; i < PADROES_RUIDO.length; i++) if(PADROES_RUIDO[i].test(linha)) return true;
+  return false;
+}
+
+function ultimoNumeroDaLinha(linha){
+  var m = String(linha).match(/[\d.]*\d,\d+|\d+(?:\.\d{3})*(?:,\d+)?/g);
+  if(!m || !m.length) return null;
+  return numeroBR(m[m.length - 1]);
+}
+
+/** Quebra a linha em campos. Aceita separação por ";" (export do ERP)
+ *  ou por espaços (colagem direta do visualizador de relatório). */
+function camposDaLinha(linha){
+  if(linha.indexOf(';') > -1){
+    return linha.split(';').map(function(s){ return s.trim(); }).filter(function(s){ return s !== ''; });
+  }
+  var m = linha.match(RE_LINHA_LIVRE);
+  if(m){
+    var maq = m[5], maqDesc = m[6];
+    var saida = [m[1], m[2]];
+    if(m[3]) saida.push(m[3]);
+    saida.push(m[4], maq, maqDesc, m[7], m[8].trim(), m[9], m[10], m[11], m[12]);
+    if(m[13]) saida.push(m[13]);
+    return saida;
+  }
+  var porEspacos = linha.split(/\s{2,}/).map(function(s){ return s.trim(); }).filter(function(s){ return s !== ''; });
+  return porEspacos.length >= 8 ? porEspacos : null;
+}
+
+function parsearLinhaDados(linha, ctx, nLinha){
+  var campos = camposDaLinha(linha);
+  if(!campos) return {erro:'não foi possível separar as colunas (nem ";" nem espaçamento reconhecível)'};
+  if(campos.length < 7) return {erro:'apenas ' + campos.length + ' colunas reconhecidas, mínimo de 7'};
+
+  var iData = -1;
+  for(var i = 0; i < campos.length; i++) if(RE_DATA_CAMPO.test(campos[i])){ iData = i; break; }
+  if(iData < 1) return {erro:'coluna DATA (dd/mm/aa) não localizada'};
+
+  var pre = campos.slice(0, iData);
+  var pos = campos.slice(iData + 1);
+
+  /* --- bloco final: HR.INICIO, HR.FIM, FS, HORAS, VLR.CUSTO --- */
+  var iHI = -1, temFase = true;
+  for(var j = 0; j <= pos.length - 3; j++){
+    if(RE_HHMM.test(pos[j]) && RE_HHMM.test(pos[j + 1]) && /^\d{1,3}$/.test(pos[j + 2])){ iHI = j; break; }
+  }
+  if(iHI < 0){
+    temFase = false;
+    for(var k = 0; k <= pos.length - 2; k++){
+      if(RE_HHMM.test(pos[k]) && RE_HHMM.test(pos[k + 1])){ iHI = k; break; }
+    }
+  }
+  if(iHI < 0) return {erro:'colunas HR.INICIO / HR.FIM não localizadas'};
+
+  var hiTxt = pos[iHI], hfTxt = pos[iHI + 1];
+  var fase  = temFase ? pos[iHI + 2] : null;
+  var horasTxt = pos[iHI + (temFase ? 3 : 2)];
+  var custoTxt = pos[iHI + (temFase ? 4 : 3)];
+  if(horasTxt === undefined || !RE_NUMERICO.test(horasTxt)) return {erro:'coluna HORAS (tempo padrão) ausente ou não numérica'};
+
+  /* --- identificação: produto, máquina, funcionário --- */
+  var idPre = extrairIdentificacao(pre.slice(1));
+  var idPos = extrairIdentificacao(pos.slice(0, iHI));
+  var produto = idPre.produto || idPos.produto || ctx.produto;
+  var descricao = idPre.descricao || idPos.descricao || ctx.descricao;
+  var toks = idPos.restante;
+
+  var maquina = ctx.maquina, maquinaDescricao = ctx.maquinaDescricao;
+  var funcionario = ctx.funcionario, funcionarioNome = ctx.funcionarioNome;
+
+  if(toks.length >= 4){
+    maquina = toks[0]; maquinaDescricao = toks[1]; funcionario = toks[2]; funcionarioNome = toks[3];
+  }else if(toks.length === 3){
+    if(/^\d+$/.test(toks[0])){ funcionario = toks[0]; funcionarioNome = toks[1]; maquina = toks[2]; }
+    else { maquina = toks[0]; maquinaDescricao = toks[1]; funcionario = toks[2]; }
+  }else if(toks.length === 2){
+    if(/^\d+$/.test(toks[0])){ funcionario = toks[0]; funcionarioNome = toks[1]; }
+    else { maquina = toks[0]; maquinaDescricao = toks[1]; }
+  }else if(toks.length === 1){
+    if(/^\d+$/.test(toks[0])) funcionario = toks[0]; else maquina = toks[0];
+  }else if(!maquina && !funcionario){
+    return {erro:'máquina e funcionário não identificados na linha nem no cabeçalho do bloco'};
+  }
+
+  /* --- ordem e quantidades --- */
+  var ordem = pre[0].replace(/[;\s]/g, '');
+  if(!/^\d{3,12}$/.test(ordem)) return {erro:'número de ordem inválido: "' + pre[0] + '"'};
+
+  var qs = idPre.restante.filter(function(t){ return RE_NUMERICO.test(t) && /\d/.test(t); });
+  var qtdeOrdem = null, qtdeProduzida = null, layout = null;
+  if(qs.length >= 2){ qtdeOrdem = numeroBR(qs[0]); qtdeProduzida = numeroBR(qs[1]); layout = 'POR PRODUTO'; }
+  else if(qs.length === 1){ qtdeOrdem = qtdeProduzida = numeroBR(qs[0]); layout = 'POR FUNCIONÁRIO'; }
+  else return {erro:'coluna de quantidade não localizada antes da data'};
+
+  /* --- horas --- */
+  var hi = hhmmParaMinutos(hiTxt);
+  var hf = hhmmParaMinutos(hfTxt);
+  var errosHora = [];
+  if(hi.erro) errosHora.push('HR.INICIO: ' + hi.erro);
+  if(hf.erro) errosHora.push('HR.FIM: ' + hf.erro);
+
+  var data = dataParaISO(campos[iData]);
+  var produtoNorm = produto ? String(produto).replace(/[;\s]/g, '') : null;
+  var mPeca = produtoNorm ? produtoNorm.match(/^(\d{3}\.\d{3})\.(\d{1,3})$/) : null;
+
+  return {
+    layout: layout,
+    registro: {
+      linhaOrigem: nLinha,
+      ordem: ordem,
+      produto: produtoNorm || '(sem produto)',
+      peca: mPeca ? mPeca[1] : (produtoNorm || '(sem produto)'),
+      cor: mPeca ? mPeca[2] : null,
+      descricao: descricao || '',
+      data: data ? data.iso : null,
+      dataBR: data ? data.br : campos[iData],
+      maquina: maquina || '(sem máquina)',
+      maquinaDescricao: maquinaDescricao || '',
+      funcionario: funcionario || '(sem funcionário)',
+      funcionarioNome: funcionarioNome || '',
+      fase: fase,
+      horaInicioTxt: hiTxt,
+      horaFimTxt: hfTxt,
+      horaInicioMin: hi.min,
+      horaFimMin: hf.min,
+      semFechamento: (numeroBR(hfTxt) === 0) || hfTxt === '' || hfTxt === undefined,
+      errosHora: errosHora,
+      qtdeOrdem: qtdeOrdem,
+      qtdeProduzida: qtdeProduzida,
+      horasPadrao: numeroBR(horasTxt),
+      valorCusto: custoTxt === undefined ? null : numeroBR(custoTxt)
+    }
+  };
+}
+
+/** Separa código de produto (+ descrição colada) do restante dos tokens. */
+function extrairIdentificacao(tokens){
+  var produto = null, descricao = null, restante = [];
+  for(var i = 0; i < tokens.length; i++){
+    var t = tokens[i];
+    if(RE_COD_PRODUTO.test(t)){
+      produto = t;
+      var prox = tokens[i + 1];
+      if(prox && /[A-Za-zÀ-ÿ]/.test(prox) && /\s/.test(prox) && (tokens.length - (i + 2)) >= 2){
+        descricao = prox; i++;
+      }
+      continue;
+    }
+    restante.push(t);
+  }
+  return {produto:produto, descricao:descricao, restante:restante};
+}
+
+/* ------------------------------------------------------------
+   MODELO — de registros (linhas) para ordens (OFs)
+   A chave de agregação é a OF, nunca a data.
+   ------------------------------------------------------------ */
+function construirOrdens(registros){
+  var mapa = new Map();
+  registros.forEach(function(r){
+    var o = mapa.get(r.ordem);
+    if(!o){
+      o = {ordem:r.ordem, produto:r.produto, peca:r.peca, cor:r.cor, descricao:r.descricao,
+           maquina:r.maquina, maquinaDescricao:r.maquinaDescricao,
+           funcionario:r.funcionario, funcionarioNome:r.funcionarioNome, fase:r.fase,
+           legs:[], anomalias:[], conflitoProduto:false};
+      mapa.set(r.ordem, o);
+    }
+    if(o.produto !== r.produto) o.conflitoProduto = true;
+    if(!o.descricao && r.descricao) o.descricao = r.descricao;
+    o.legs.push(r);
+  });
+
+  var ordens = [];
+  mapa.forEach(function(o){
+    o.legs.sort(function(a, b){
+      return (a.data || '').localeCompare(b.data || '') || ((a.horaInicioMin || 0) - (b.horaInicioMin || 0));
+    });
+    o.datas = unicos(o.legs.map(function(l){ return l.dataBR; }));
+    o.qtdeOrdem = Math.max.apply(null, o.legs.map(function(l){ return l.qtdeOrdem || 0; }));
+    o.qtdeProduzida = soma(o.legs, function(l){ return l.qtdeProduzida || 0; });
+    o.horasPadrao = soma(o.legs, function(l){ return l.horasPadrao || 0; });
+
+    o.horaInvalida = o.legs.some(function(l){ return l.errosHora.length > 0; });
+    o.aberta = o.legs.some(function(l){ return l.semFechamento; });
+    o.viradaDia = o.legs.some(function(l){
+      return !l.semFechamento && l.horaInicioMin !== null && l.horaFimMin !== null && l.horaFimMin < l.horaInicioMin;
+    });
+
+    o.minutosReais = 0; o.temMinutos = false;
+    o.legs.forEach(function(l){
+      if(l.semFechamento || l.horaInicioMin === null || l.horaFimMin === null) return;
+      if(l.horaFimMin < l.horaInicioMin) return;
+      l.minutosReais = l.horaFimMin - l.horaInicioMin;
+      o.minutosReais += l.minutosReais;
+      o.temMinutos = true;
+    });
+
+    o.partida = o.datas.length > 1 || o.legs.length > 1;
+    o.incompleta = !o.aberta && o.qtdeProduzida === 0;
+    o.duracaoZero = !o.aberta && !o.incompleta && !o.horaInvalida && !o.viradaDia && o.minutosReais === 0;
+    o.temPadrao = o.horasPadrao > 0;
+
+    o.elegivel = !o.aberta && !o.incompleta && !o.horaInvalida && !o.viradaDia &&
+                 o.qtdeProduzida > 0 && o.minutosReais > 0;
+
+    if(o.elegivel){
+      o.horasReais       = o.minutosReais / 60;
+      o.pecasPorMinuto   = o.qtdeProduzida / o.minutosReais;
+      o.pecasPorHora     = o.pecasPorMinuto * 60;
+      o.segPecaReal      = (o.minutosReais * 60) / o.qtdeProduzida;
+      o.segPecaPadrao    = o.temPadrao ? (o.horasPadrao * 3600) / o.qtdeProduzida : null;
+      o.aderencia        = o.temPadrao ? (o.horasPadrao / o.horasReais) * 100 : null;
+    }else{
+      o.horasReais = o.temMinutos ? o.minutosReais / 60 : null;
+      o.pecasPorMinuto = o.pecasPorHora = o.segPecaReal = o.segPecaPadrao = o.aderencia = null;
+    }
+
+    o.situacao = o.horaInvalida ? 'hora-invalida'
+               : o.viradaDia    ? 'virada-dia'
+               : o.aberta       ? 'aberta'
+               : o.incompleta   ? 'incompleta'
+               : o.duracaoZero  ? 'duracao-zero'
+               : o.partida      ? 'partida' : 'ok';
+    o.pendente = ['hora-invalida','virada-dia','aberta','incompleta','duracao-zero'].indexOf(o.situacao) > -1;
+    ordens.push(o);
+  });
+
+  ordens.sort(function(a, b){
+    var da = a.legs[0], db = b.legs[0];
+    return (da.data || '').localeCompare(db.data || '') ||
+           ((da.horaInicioMin === null ? 1e9 : da.horaInicioMin) - (db.horaInicioMin === null ? 1e9 : db.horaInicioMin)) ||
+           a.ordem.localeCompare(b.ordem);
+  });
+  return ordens;
+}
+
+/* ------------------------------------------------------------
+   DETECÇÃO DE ANOMALIAS
+   ------------------------------------------------------------ */
+var FATOR_PADRAO_IMPLAUSIVEL = 5;    /* 3.7 #2 */
+var FATOR_PARADA_EMBUTIDA    = 2.5;  /* 3.7 #3 */
+var TOL_PADRAO_ENTRE_CORES   = 0.15; /* 3.7 #1 */
+var MIN_SEQUENCIA_COLADA     = 120;  /* 3.7 #4, em minutos */
+
+function marcar(ordem, tipo, severidade, titulo, texto){
+  ordem.anomalias.push({tipo:tipo, severidade:severidade, titulo:titulo, texto:texto});
+}
+function temAnomalia(ordem, tipo){
+  return ordem.anomalias.some(function(a){ return a.tipo === tipo; });
+}
+
+/** #2 — tempo padrão que destoa mais de 5x da mediana das OUTRAS OFs do mesmo produto. */
+function detectarPadraoImplausivel(ordens){
+  var porProduto = new Map();
+  ordens.forEach(function(o){
+    if(!o.elegivel || !o.temPadrao) return;
+    if(!porProduto.has(o.produto)) porProduto.set(o.produto, []);
+    porProduto.get(o.produto).push(o);
+  });
+  porProduto.forEach(function(lista){
+    if(lista.length < 3) return;   /* com menos de 3 OFs não há mediana confiável */
+    lista.forEach(function(o){
+      var outras = lista.filter(function(x){ return x !== o; }).map(function(x){ return x.segPecaPadrao; });
+      var med = mediana(outras);
+      if(!med || !o.segPecaPadrao) return;
+      var razao = o.segPecaPadrao > med ? o.segPecaPadrao / med : med / o.segPecaPadrao;
+      if(razao > FATOR_PADRAO_IMPLAUSIVEL){
+        o.padraoImplausivelRazao = razao;
+        marcar(o, 'padrao-implausivel', 'atencao', 'Tempo padrão implausível',
+          'O tempo padrão desta OF é de ' + fmt(o.segPecaPadrao, 4) + ' s/pç, ' + fmt(razao, 1) +
+          '× fora da mediana de ' + fmt(med, 4) + ' s/pç das outras ' + (lista.length - 1) +
+          ' OFs do mesmo produto no período. Erro de cadastro ou de rateio do ERP nesta ordem: ela distorce a carga-máquina e foi retirada do padrão de referência do produto.');
+      }
+    });
+  });
+}
+
+/** #3 — duração real muito acima das OFs gêmeas: parada (almoço, setup, falta de material) dentro da OF. */
+function detectarParadaEmbutida(ordens){
+  var elegiveis = ordens.filter(function(o){ return o.elegivel; });
+  var porQtde = new Map(), porProduto = new Map();
+  elegiveis.forEach(function(o){
+    var k = o.produto + '|' + o.qtdeProduzida;
+    if(!porQtde.has(k)) porQtde.set(k, []);
+    porQtde.get(k).push(o);
+    if(!porProduto.has(o.produto)) porProduto.set(o.produto, []);
+    porProduto.get(o.produto).push(o);
+  });
+  elegiveis.forEach(function(o){
+    var gemeas = porQtde.get(o.produto + '|' + o.qtdeProduzida) || [];
+    var base = null, med = null, criterio = '';
+    if(gemeas.length >= 3){
+      base = gemeas; criterio = 'mesma quantidade (' + fmt(o.qtdeProduzida, 0) + ' pç)';
+      med = mediana(gemeas.filter(function(x){ return x !== o; }).map(function(x){ return x.minutosReais; }));
+      if(med && o.minutosReais > med * FATOR_PARADA_EMBUTIDA){
+        o.paradaExcedente = o.minutosReais - med;
+        marcar(o, 'parada-embutida', 'atencao', 'Parada embutida na ordem',
+          'Duração real de ' + fmt(o.minutosReais, 0) + ' min contra mediana de ' + fmt(med, 0) +
+          ' min das outras ' + (base.length - 1) + ' OFs de ' + criterio + ' — ' + fmt(o.minutosReais / med, 1) +
+          '×. São ' + fmt(o.paradaExcedente, 0) + ' min a mais, compatíveis com almoço, setup ou espera de material lançados dentro da ordem em vez de apontados como parada.');
+      }else if(med && o.minutosReais > 0 && med > o.minutosReais * FATOR_PARADA_EMBUTIDA){
+        marcar(o, 'ritmo-implausivel', 'atencao', 'Ritmo real implausível',
+          'Duração real de ' + fmt(o.minutosReais, 0) + ' min contra mediana de ' + fmt(med, 0) +
+          ' min das outras ' + (base.length - 1) + ' OFs de ' + criterio + ' — ' + fmt(med / o.minutosReais, 1) +
+          '× mais rápido. A máquina não muda de ritmo nessa proporção no mesmo produto: a janela de horário não corresponde à execução real, ' +
+          'e sim a quantidade lançada de uma vez. A OF fica fora do ritmo de referência.');
+      }
+      return;
+    }
+    var doProduto = porProduto.get(o.produto) || [];
+    if(doProduto.length < 3) return;
+    med = mediana(doProduto.filter(function(x){ return x !== o; }).map(function(x){ return x.segPecaReal; }));
+    if(med && o.segPecaReal > med * FATOR_PARADA_EMBUTIDA){
+      o.paradaExcedente = o.minutosReais - (med * o.qtdeProduzida / 60);
+      marcar(o, 'parada-embutida', 'atencao', 'Parada embutida na ordem',
+        'Ritmo real de ' + fmt(o.segPecaReal, 2) + ' s/pç contra mediana de ' + fmt(med, 2) +
+        ' s/pç das outras OFs do mesmo produto (quantidades diferentes, comparação por peça) — ' +
+        fmt(o.segPecaReal / med, 1) + '×. Equivale a ' + fmt(o.paradaExcedente, 0) +
+        ' min a mais do que o esperado dentro desta ordem.');
+    }else if(med && o.segPecaReal > 0 && med > o.segPecaReal * FATOR_PARADA_EMBUTIDA){
+      marcar(o, 'ritmo-implausivel', 'atencao', 'Ritmo real implausível',
+        'Ritmo real de ' + fmt(o.segPecaReal, 2) + ' s/pç contra mediana de ' + fmt(med, 2) +
+        ' s/pç das outras OFs do mesmo produto — ' + fmt(med / o.segPecaReal, 1) + '× mais rápido, ' +
+        fmt(o.qtdeProduzida, 0) + ' peças em ' + fmt(o.minutosReais, 0) + ' min. A janela de horário não corresponde à execução real: ' +
+        'quantidade lançada de uma vez, típico de apontamento em bloco. A OF fica fora do ritmo de referência.');
+    }
+  });
+}
+
+/** #4 — cadeia de OFs em que HR.FIM de uma é exatamente HR.INICIO da seguinte por mais de 2h. */
+function detectarSequenciaColada(registros, ordensPorNumero){
+  var grupos = new Map();
+  registros.forEach(function(r){
+    if(r.semFechamento || r.horaInicioMin === null || r.horaFimMin === null) return;
+    if(r.horaFimMin < r.horaInicioMin) return;
+    var k = r.maquina + '|' + r.funcionario + '|' + (r.data || r.dataBR);
+    if(!grupos.has(k)) grupos.set(k, []);
+    grupos.get(k).push(r);
+  });
+
+  var cadeias = [];
+  grupos.forEach(function(lista, chave){
+    lista.sort(function(a, b){ return a.horaInicioMin - b.horaInicioMin; });
+    var atual = [lista[0]];
+    for(var i = 1; i < lista.length; i++){
+      if(lista[i].horaInicioMin === atual[atual.length - 1].horaFimMin) atual.push(lista[i]);
+      else { cadeias.push({chave:chave, itens:atual}); atual = [lista[i]]; }
+    }
+    cadeias.push({chave:chave, itens:atual});
+  });
+
+  var resultado = [];
+  cadeias.forEach(function(c){
+    if(c.itens.length < 3) return;
+    var ini = c.itens[0].horaInicioMin, fim = c.itens[c.itens.length - 1].horaFimMin;
+    var dur = fim - ini;
+    if(dur <= MIN_SEQUENCIA_COLADA) return;
+    var partes = c.chave.split('|');
+    var info = {maquina:partes[0], funcionario:partes[1], data:c.itens[0].dataBR,
+                inicio:c.itens[0].horaInicioTxt, fim:c.itens[c.itens.length - 1].horaFimTxt,
+                duracao:dur, ordens:unicos(c.itens.map(function(x){ return x.ordem; }))};
+    resultado.push(info);
+    info.ordens.forEach(function(num, idx){
+      var o = ordensPorNumero.get(num);
+      if(!o || temAnomalia(o, 'sequencia-colada')) return;
+      var texto = idx === 0
+        ? 'Bloco de ' + info.ordens.length + ' ordens em que o HR.FIM de uma é exatamente o HR.INICIO da seguinte, de ' +
+          info.inicio + ' a ' + info.fim + ' (' + fmt(dur, 0) + ' min) na ' + info.maquina +
+          ', sem um único minuto de setup, troca de programa ou banheiro. Indica apontamento lançado em bloco depois do fato, não em tempo real: ' +
+          'a análise OF a OF fica comprometida, o agregado do bloco continua válido.'
+        : 'Mesmo bloco colado da OF ' + info.ordens[0] + ' (' + info.inicio + ' a ' + info.fim + ', ' + info.ordens.length +
+          ' ordens sem intervalo entre elas). O horário desta OF não é medição, é rateio do bloco.';
+      marcar(o, 'sequencia-colada', 'atencao', 'Sequência colada', texto);
+    });
+  });
+  return resultado;
+}
+
+/* ------------------------------------------------------------
+   AGREGAÇÕES
+   ------------------------------------------------------------ */
+
+/** Formatação numérica pt-BR usada também nos textos de anomalia. */
+function fmt(v, dec){
+  if(v === null || v === undefined || !isFinite(v)) return '—';
+  if(dec === undefined) dec = 2;
+  return Number(v).toLocaleString('pt-BR', {minimumFractionDigits:dec, maximumFractionDigits:dec});
+}
+
+function ordemAnomalaParaRitmo(o){ return temAnomalia(o, 'parada-embutida') || temAnomalia(o, 'ritmo-implausivel'); }
+function ordemAnomalaParaPadrao(o){ return temAnomalia(o, 'padrao-implausivel'); }
+
+function agregarPorProduto(ordens){
+  var mapa = new Map();
+  ordens.forEach(function(o){
+    var g = mapa.get(o.produto);
+    if(!g){
+      g = {produto:o.produto, peca:o.peca, cor:o.cor, descricao:o.descricao,
+           ordens:[], anomalias:[]};
+      mapa.set(o.produto, g);
+    }
+    if(!g.descricao && o.descricao) g.descricao = o.descricao;
+    g.ordens.push(o);
+  });
+
+  var lista = [];
+  mapa.forEach(function(g){
+    var elig = g.ordens.filter(function(o){ return o.elegivel; });
+    var limpasRitmo  = elig.filter(function(o){ return !ordemAnomalaParaRitmo(o); });
+    var limpasPadrao = elig.filter(function(o){ return o.temPadrao && !ordemAnomalaParaPadrao(o); });
+
+    g.qtdeOFs        = g.ordens.length;
+    g.qtdeOFsValidas = elig.length;
+    g.qtdePendentes  = g.ordens.filter(function(o){ return o.pendente; }).length;
+    g.qtdeAnomalas   = elig.filter(function(o){ return o.anomalias.length > 0; }).length;
+
+    g.qtde        = soma(elig, function(o){ return o.qtdeProduzida; });
+    g.minutos     = soma(elig, function(o){ return o.minutosReais; });
+    g.horasReais  = g.minutos / 60;
+    g.horasPadrao = soma(elig, function(o){ return o.horasPadrao; });
+
+    g.pecasPorMinuto = g.minutos ? g.qtde / g.minutos : null;
+    g.pecasPorHora   = g.pecasPorMinuto === null ? null : g.pecasPorMinuto * 60;
+    g.segPecaReal    = g.qtde ? (g.minutos * 60) / g.qtde : null;
+    g.aderencia      = g.horasReais ? (g.horasPadrao / g.horasReais) * 100 : null;
+
+    var qL = soma(limpasRitmo, function(o){ return o.qtdeProduzida; });
+    var mL = soma(limpasRitmo, function(o){ return o.minutosReais; });
+    g.qtdeLimpa = qL; g.minutosLimpo = mL;
+    g.pecasPorMinutoLimpo = mL ? qL / mL : null;
+    g.pecasPorHoraLimpo   = g.pecasPorMinutoLimpo === null ? null : g.pecasPorMinutoLimpo * 60;
+    g.segPecaRealLimpo    = qL ? (mL * 60) / qL : null;
+    g.aderenciaLimpo      = mL ? (soma(limpasRitmo, function(o){ return o.horasPadrao; }) / (mL / 60)) * 100 : null;
+    g.ofsDescartadasRitmo = elig.length - limpasRitmo.length;
+
+    /* padrão de referência = mediana das OFs válidas, sem as implausíveis */
+    var padroesOF = limpasPadrao.map(function(o){ return o.segPecaPadrao; });
+    g.segPecaPadrao = mediana(padroesOF);
+    g.padraoIndisponivel = g.segPecaPadrao === null;
+    g.aderenciaPadraoRef = (g.segPecaPadrao && g.segPecaReal) ? (g.segPecaPadrao / g.segPecaReal) * 100 : null;
+
+    /* #5 — o mesmo item com tempos padrão diferentes entre as próprias OFs.
+       Precisa ser resolvido no item antes de qualquer comparação entre cores. */
+    g.padraoOFMin = padroesOF.length ? Math.min.apply(null, padroesOF) : null;
+    g.padraoOFMax = padroesOF.length ? Math.max.apply(null, padroesOF) : null;
+    g.dispersaoInterna = (g.padraoOFMin && g.padraoOFMax) ? (g.padraoOFMax / g.padraoOFMin - 1) : null;
+    g.padraoInstavel = padroesOF.length >= 2 && g.dispersaoInterna !== null &&
+                       g.dispersaoInterna > TOL_PADRAO_ENTRE_CORES;
+    if(g.padraoInstavel){
+      var txtInst = 'O item ' + g.produto + ' aparece com tempos padrão diferentes entre as próprias OFs do período: de ' +
+        fmt(g.padraoOFMin, 4) + ' a ' + fmt(g.padraoOFMax, 4) + ' s/pç (' + fmt(g.dispersaoInterna * 100, 1) +
+        '% de dispersão) em ' + padroesOF.length + ' OFs. O tempo padrão é atributo fixo do item: variar entre ordens ' +
+        'significa cadastro alterado no meio do período ou rateio indevido do ERP. Enquanto isso não for resolvido, ' +
+        'este item fica fora da comparação entre cores — o problema está dentro dele, não na cor.';
+      g.anomalias.push({tipo:'padrao-inconsistente', severidade:'critico',
+                        titulo:'Tempo padrão inconsistente entre OFs do mesmo item', texto:txtInst});
+      limpasPadrao.forEach(function(o){
+        if(g.segPecaPadrao && Math.abs(o.segPecaPadrao / g.segPecaPadrao - 1) > TOL_PADRAO_ENTRE_CORES){
+          marcar(o, 'padrao-inconsistente', 'critico', 'Tempo padrão inconsistente entre OFs do mesmo item',
+            'Esta OF usa ' + fmt(o.segPecaPadrao, 4) + ' s/pç enquanto a mediana das OFs de ' + g.produto +
+            ' no período é ' + fmt(g.segPecaPadrao, 4) + ' s/pç (o item varia de ' + fmt(g.padraoOFMin, 4) + ' a ' +
+            fmt(g.padraoOFMax, 4) + ' s/pç). Tempo padrão é atributo fixo do item: variar entre ordens significa cadastro alterado ' +
+            'no meio do período ou rateio indevido do ERP.');
+        }
+      });
+    }
+    lista.push(g);
+  });
+
+  lista.sort(function(a, b){ return b.minutos - a.minutos; });
+  return lista;
+}
+
+/** Agrupa por peça física (AAA.BBB), ignorando a cor — anomalia #1. */
+function agregarPorPeca(produtos, ordens){
+  var mapa = new Map();
+  produtos.forEach(function(p){
+    var g = mapa.get(p.peca);
+    if(!g){ g = {peca:p.peca, cores:[], descricao:p.descricao}; mapa.set(p.peca, g); }
+    g.cores.push(p);
+  });
+
+  var ordensPorProduto = new Map();
+  ordens.forEach(function(o){
+    if(!ordensPorProduto.has(o.produto)) ordensPorProduto.set(o.produto, []);
+    ordensPorProduto.get(o.produto).push(o);
+  });
+
+  var lista = [];
+  mapa.forEach(function(g){
+    g.cores.sort(function(a, b){ return a.produto.localeCompare(b.produto); });
+    g.descricaoBase = descricaoComum(g.cores.map(function(c){ return c.descricao || ''; }));
+    var comPadrao = g.cores.filter(function(c){ return !c.padraoIndisponivel; });
+    var comparaveis = comPadrao.filter(function(c){ return !c.padraoInstavel; });
+    var comReal   = g.cores.filter(function(c){ return c.segPecaRealLimpo !== null && c.qtdeLimpa > 0; });
+    g.coresInstaveis = comPadrao.filter(function(c){ return c.padraoInstavel; });
+
+    g.qtde        = soma(g.cores, function(c){ return c.qtde; });
+    g.minutos     = soma(g.cores, function(c){ return c.minutos; });
+    g.padraoMediana = mediana(comPadrao.map(function(c){ return c.segPecaPadrao; }));
+    g.realMediana   = mediana(comReal.map(function(c){ return c.segPecaRealLimpo; }));
+    g.qtdeLimpa     = soma(g.cores, function(c){ return c.qtdeLimpa || 0; });
+    g.minutosLimpo  = soma(g.cores, function(c){ return c.minutosLimpo || 0; });
+    g.realPonderado = g.qtdeLimpa ? (g.minutosLimpo * 60) / g.qtdeLimpa : null;
+    g.temAnomalaExcluida = g.cores.some(function(c){ return c.ofsDescartadasRitmo > 0; });
+    g.referencia    = g.realMediana !== null ? g.realMediana : g.padraoMediana;
+    g.baseReferencia = g.realMediana !== null ? 'mediana do tempo real medido' : 'mediana do tempo padrão cadastrado';
+
+    var padroes = comparaveis.map(function(c){ return c.segPecaPadrao; });
+    g.padraoMin = padroes.length ? Math.min.apply(null, padroes) : null;
+    g.padraoMax = padroes.length ? Math.max.apply(null, padroes) : null;
+    g.dispersao = (g.padraoMin && g.padraoMax) ? (g.padraoMax / g.padraoMin - 1) : null;
+    g.divergente = comparaveis.length >= 2 && g.dispersao !== null && g.dispersao > TOL_PADRAO_ENTRE_CORES;
+    g.qtdeComparaveis = comparaveis.length;
+
+    g.cores.forEach(function(c){
+      c.desvioReferencia = (c.segPecaPadrao !== null && g.referencia) ? (c.segPecaPadrao / g.referencia - 1) : null;
+      c.padraoSugerido = g.referencia;
+      c.impactoHoras = (c.segPecaPadrao !== null && g.referencia && c.qtde)
+        ? ((g.referencia - c.segPecaPadrao) * c.qtde) / 3600 : null;
+      c.padraoForaDaFaixa = g.divergente && !c.padraoInstavel && c.desvioReferencia !== null &&
+                            Math.abs(c.desvioReferencia) > TOL_PADRAO_ENTRE_CORES;
+      if(c.padraoForaDaFaixa){
+        var txt = 'Peça ' + g.peca + ': esta cor está cadastrada em ' + fmt(c.segPecaPadrao, 2) +
+          ' s/pç enquanto a referência do grupo é ' + fmt(g.referencia, 2) + ' s/pç (' + g.baseReferencia + '), desvio de ' +
+          fmt(c.desvioReferencia * 100, 1) + '%. Como a cor não muda o ciclo de furação, a diferença é erro de cadastro do tempo padrão, não diferença de processo.' +
+          (c.impactoHoras !== null ? ' Corrigir o padrão muda a carga-máquina deste item em ' + fmt(c.impactoHoras, 3) + ' h só no volume deste período.' : '');
+        c.anomalias.push({tipo:'padrao-divergente', severidade:'critico', titulo:'Padrão divergente entre cores', texto:txt});
+        (ordensPorProduto.get(c.produto) || []).forEach(function(o){
+          if(!temAnomalia(o, 'padrao-divergente')) marcar(o, 'padrao-divergente', 'critico', 'Padrão divergente entre cores', txt);
+        });
+      }
+    });
+    lista.push(g);
+  });
+
+  lista.sort(function(a, b){
+    if(a.divergente !== b.divergente) return a.divergente ? -1 : 1;
+    return (b.dispersao || 0) - (a.dispersao || 0);
+  });
+  return lista;
+}
+
+/** Prefixo comum das descrições das cores, para nomear a peça física. */
+function descricaoComum(descricoes){
+  var validas = descricoes.filter(Boolean);
+  if(!validas.length) return '';
+  var partes = validas[0].split(/\s+/), saida = [];
+  for(var i = 0; i < partes.length; i++){
+    var todas = validas.every(function(d){ var p = d.split(/\s+/); return p[i] === partes[i]; });
+    if(!todas) break;
+    saida.push(partes[i]);
+  }
+  return saida.join(' ') || validas[0];
+}
+
+/** Janela de turno, tempo apontado e lacunas — por máquina + operador + dia. */
+function analisarTurnos(registros){
+  var grupos = new Map();
+  registros.forEach(function(r){
+    if(r.semFechamento || r.horaInicioMin === null || r.horaFimMin === null || r.horaFimMin < r.horaInicioMin) return;
+    var k = r.maquina + '|' + r.funcionario + '|' + (r.dataBR || '');
+    if(!grupos.has(k)) grupos.set(k, []);
+    grupos.get(k).push(r);
+  });
+
+  var turnos = [];
+  grupos.forEach(function(lista, chave){
+    lista.sort(function(a, b){ return a.horaInicioMin - b.horaInicioMin || a.horaFimMin - b.horaFimMin; });
+    var partes = chave.split('|');
+    var janelaIni = lista[0].horaInicioMin;
+    var janelaFim = Math.max.apply(null, lista.map(function(r){ return r.horaFimMin; }));
+    var apontado = soma(lista, function(r){ return r.horaFimMin - r.horaInicioMin; });
+
+    var uniao = [], lacunas = [], sobreposicoes = [];
+    lista.forEach(function(r){
+      var ult = uniao[uniao.length - 1];
+      if(ult && r.horaInicioMin <= ult.fim){
+        if(r.horaInicioMin < ult.fim) sobreposicoes.push({ordem:r.ordem, min:Math.min(ult.fim, r.horaFimMin) - r.horaInicioMin});
+        ult.fim = Math.max(ult.fim, r.horaFimMin);
+      }else{
+        if(ult) lacunas.push({deMin:ult.fim, ateMin:r.horaInicioMin, min:r.horaInicioMin - ult.fim,
+                              antes:ult.ultimaOrdem, depois:r.ordem});
+        uniao.push({ini:r.horaInicioMin, fim:r.horaFimMin});
+      }
+      uniao[uniao.length - 1].ultimaOrdem = r.ordem;
+    });
+    var coberto = soma(uniao, function(u){ return u.fim - u.ini; });
+
+    turnos.push({
+      maquina:partes[0], funcionario:partes[1], data:partes[2],
+      funcionarioNome:lista[0].funcionarioNome, maquinaDescricao:lista[0].maquinaDescricao,
+      inicioMin:janelaIni, fimMin:janelaFim, janela:janelaFim - janelaIni,
+      apontado:apontado, coberto:coberto, semOF:(janelaFim - janelaIni) - coberto,
+      sobreposicao:apontado - coberto, sobreposicoes:sobreposicoes,
+      lacunas:lacunas, qtdeApontamentos:lista.length
+    });
+  });
+
+  turnos.sort(function(a, b){ return (a.data || '').localeCompare(b.data || '') || a.maquina.localeCompare(b.maquina); });
+  return turnos;
+}
+
+function agregarPorRecurso(ordens, turnos, campo, campoNome){
+  var mapa = new Map();
+  ordens.forEach(function(o){
+    var chave = o[campo];
+    var g = mapa.get(chave);
+    if(!g){
+      g = {chave:chave, nome:o[campoNome] || '', ordens:[], produtos:new Set(), maquinas:new Set()};
+      mapa.set(chave, g);
+    }
+    if(!g.nome && o[campoNome]) g.nome = o[campoNome];
+    g.ordens.push(o);
+    g.produtos.add(o.produto);
+    g.maquinas.add(o.maquina);
+  });
+
+  var porRecurso = new Map();
+  turnos.forEach(function(t){
+    var k = campo === 'maquina' ? t.maquina : t.funcionario;
+    if(!porRecurso.has(k)) porRecurso.set(k, {semOF:0, janela:0, coberto:0, dias:new Set()});
+    var a = porRecurso.get(k);
+    a.semOF += t.semOF; a.janela += t.janela; a.coberto += t.coberto; a.dias.add(t.data);
+  });
+
+  var lista = [];
+  mapa.forEach(function(g){
+    var elig = g.ordens.filter(function(o){ return o.elegivel; });
+    g.qtde        = soma(elig, function(o){ return o.qtdeProduzida; });
+    g.minutos     = soma(elig, function(o){ return o.minutosReais; });
+    g.horasPadrao = soma(elig, function(o){ return o.horasPadrao; });
+    g.horasReais  = g.minutos / 60;
+    g.pecasPorMinuto = g.minutos ? g.qtde / g.minutos : null;
+    g.pecasPorHora   = g.pecasPorMinuto === null ? null : g.pecasPorMinuto * 60;
+    g.aderencia      = g.horasReais ? (g.horasPadrao / g.horasReais) * 100 : null;
+    g.qtdeOFs        = g.ordens.length;
+    g.qtdePendentes  = g.ordens.filter(function(o){ return o.pendente; }).length;
+    g.qtdeAnomalas   = elig.filter(function(o){ return o.anomalias.length > 0; }).length;
+    g.qtdeProdutos   = g.produtos.size;
+    g.qtdeMaquinas   = g.maquinas.size;
+
+    var ritmos = [];
+    var porProd = new Map();
+    elig.forEach(function(o){
+      if(!porProd.has(o.produto)) porProd.set(o.produto, {q:0, m:0});
+      var a = porProd.get(o.produto); a.q += o.qtdeProduzida; a.m += o.minutosReais;
+    });
+    porProd.forEach(function(a){ if(a.m) ritmos.push(a.q / a.m); });
+    g.ritmoMin = ritmos.length ? Math.min.apply(null, ritmos) : null;
+    g.ritmoMax = ritmos.length ? Math.max.apply(null, ritmos) : null;
+
+    var t = porRecurso.get(g.chave);
+    g.semOF  = t ? t.semOF  : null;
+    g.janela = t ? t.janela : null;
+    g.dias   = t ? t.dias.size : 0;
+    g.percSemOF = (t && t.janela) ? (t.semOF / t.janela) * 100 : null;
+    lista.push(g);
+  });
+
+  lista.sort(function(a, b){ return b.minutos - a.minutos; });
+  return lista;
+}
+
+/** Conferência em três vias: soma das linhas × soma dos subtotais × rodapé. */
+function conferirTotais(registros, diagnostico){
+  var somaLinhas = soma(registros, function(r){ return r.horasPadrao || 0; });
+  var subtotais = diagnostico.subtotais.filter(function(s){ return s.valor !== null; });
+  var somaSubtotais = subtotais.length ? soma(subtotais, function(s){ return s.valor; }) : null;
+  var rodape = diagnostico.totalGeral;
+
+  var porProduto = new Map();
+  registros.forEach(function(r){
+    if(!porProduto.has(r.produto)) porProduto.set(r.produto, 0);
+    porProduto.set(r.produto, porProduto.get(r.produto) + (r.horasPadrao || 0));
+  });
+
+  var linhasProduto = subtotais.map(function(s){
+    var calc = porProduto.has(s.produto) ? porProduto.get(s.produto) : null;
+    var dif = (calc !== null && s.valor !== null) ? s.valor - calc : null;
+    return {produto:s.produto, descricao:s.descricao, subtotalRelatorio:s.valor, somaLinhas:calc,
+            diferenca:dif, percentual:(dif !== null && calc) ? (dif / calc) * 100 : null};
+  });
+
+  function comparar(a, b){
+    if(a === null || b === null) return null;
+    var dif = b - a;
+    return {dif:dif, perc:a ? (dif / a) * 100 : null, divergente:a ? Math.abs(dif / a) > 0.01 : Math.abs(dif) > 0};
+  }
+
+  return {
+    somaLinhas:somaLinhas, somaSubtotais:somaSubtotais, rodape:rodape,
+    linhasVsSubtotais:comparar(somaLinhas, somaSubtotais),
+    subtotaisVsRodape:comparar(somaSubtotais, rodape),
+    linhasVsRodape:comparar(somaLinhas, rodape),
+    porProduto:linhasProduto.filter(function(l){ return l.percentual === null || Math.abs(l.percentual) > 0.01; })
+  };
+}
+
+/** Ponto único de entrada do cálculo: registros -> modelo completo. */
+function construirModelo(registros, diagnostico){
+  var ordens = construirOrdens(registros);
+  var porNumero = new Map();
+  ordens.forEach(function(o){ porNumero.set(o.ordem, o); });
+
+  detectarPadraoImplausivel(ordens);
+  detectarParadaEmbutida(ordens);
+  var cadeias = detectarSequenciaColada(registros, porNumero);
+
+  var produtos = agregarPorProduto(ordens);
+  var pecas    = agregarPorPeca(produtos, ordens);
+  var turnos   = analisarTurnos(registros);
+  var maquinas = agregarPorRecurso(ordens, turnos, 'maquina', 'maquinaDescricao');
+  var funcionarios = agregarPorRecurso(ordens, turnos, 'funcionario', 'funcionarioNome');
+  var conferencia = conferirTotais(registros, diagnostico);
+
+  var elig = ordens.filter(function(o){ return o.elegivel; });
+  var minutos = soma(elig, function(o){ return o.minutosReais; });
+  var resumo = {
+    ofsTotal: ordens.length,
+    ofsValidas: elig.length,
+    ofsAbertas: ordens.filter(function(o){ return o.situacao === 'aberta'; }).length,
+    ofsIncompletas: ordens.filter(function(o){ return o.situacao === 'incompleta'; }).length,
+    ofsPartidas: ordens.filter(function(o){ return o.partida; }).length,
+    ofsDuracaoZero: ordens.filter(function(o){ return o.situacao === 'duracao-zero'; }).length,
+    ofsHoraInvalida: ordens.filter(function(o){ return o.situacao === 'hora-invalida'; }).length,
+    ofsViradaDia: ordens.filter(function(o){ return o.situacao === 'virada-dia'; }).length,
+    ofsAnomalas: elig.filter(function(o){ return o.anomalias.length > 0; }).length,
+    ofsPendentes: ordens.filter(function(o){ return o.pendente; }).length,
+    pecas: soma(elig, function(o){ return o.qtdeProduzida; }),
+    minutosReais: minutos,
+    horasReais: minutos / 60,
+    horasPadrao: soma(elig, function(o){ return o.horasPadrao; }),
+    janela: soma(turnos, function(t){ return t.janela; }),
+    semOF: soma(turnos, function(t){ return t.semOF; }),
+    sobreposicao: soma(turnos, function(t){ return t.sobreposicao; }),
+    produtosDistintos: produtos.length,
+    pecasDivergentes: pecas.filter(function(p){ return p.divergente; }).length,
+    produtosPadraoInstavel: produtos.filter(function(p){ return p.padraoInstavel; }).length,
+    cadeiasColadas: cadeias.length
+  };
+  var porTipo = {};
+  elig.forEach(function(o){ o.anomalias.forEach(function(a){ porTipo[a.tipo] = (porTipo[a.tipo] || 0) + 1; }); });
+  resumo.porTipoAnomalia = porTipo;
+  resumo.aderencia = resumo.horasReais ? (resumo.horasPadrao / resumo.horasReais) * 100 : null;
+  resumo.percSemOF = resumo.janela ? (resumo.semOF / resumo.janela) * 100 : null;
+  resumo.pecasPorMinuto = minutos ? resumo.pecas / minutos : null;
+
+  return {registros:registros, diagnostico:diagnostico, ordens:ordens, ordensPorNumero:porNumero,
+          produtos:produtos, pecas:pecas, turnos:turnos, maquinas:maquinas,
+          funcionarios:funcionarios, cadeias:cadeias, conferencia:conferencia, resumo:resumo};
+}
+/* ============================================================
+   NUCLEO-FIM
+   ============================================================ */
+
+/* ============================================================
+   RENDER — nada acima desta linha depende do DOM
+   ============================================================ */
+var $  = function(s, r){ return (r || document).querySelector(s); };
+var $$ = function(s, r){ return Array.prototype.slice.call((r || document).querySelectorAll(s)); };
+var ESTADO = {modelo:null, filtroOrdens:'todas'};
+
+function esc(v){
+  return String(v === null || v === undefined ? '' : v)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+function pct(v, dec){ return v === null || v === undefined || !isFinite(v) ? '—' : fmt(v, dec === undefined ? 1 : dec) + '%'; }
+function classeAderencia(v){
+  if(v === null || v === undefined || !isFinite(v)) return '';
+  if(Math.abs(v - 100) <= 10) return 'ok';
+  return Math.abs(v - 100) > 25 ? 'critico' : 'atencao';
+}
+var ICONES = {critico:'✖', atencao:'▲', ok:'✓', info:'ℹ'};
+
+function selo(texto, tipo, icone){
+  return '<span class="selo selo-' + tipo + '">' + (icone || ICONES[tipo] || '') + ' ' + esc(texto) + '</span>';
+}
+function selosDaOrdem(o){
+  var s = '';
+  if(o.situacao === 'aberta')        s += selo('Aberta sem fechamento', 'critico', '◔');
+  if(o.situacao === 'incompleta')    s += selo('Partida incompleta', 'critico', '⇄');
+  if(o.situacao === 'duracao-zero')  s += selo('Duração zero', 'atencao');
+  if(o.situacao === 'hora-invalida') s += selo('Hora inválida', 'critico');
+  if(o.situacao === 'virada-dia')    s += selo('Fim antes do início', 'critico');
+  if(o.partida && o.situacao !== 'incompleta') s += selo('Ordem partida (' + o.datas.length + ' datas)', 'info', '⇄');
+  o.anomalias.forEach(function(a){ s += selo(a.titulo, a.severidade); });
+  if(!s) s = selo('Sem ocorrência', 'ok');
+  return s;
+}
+function blocoAlerta(a){
+  return '<div class="alerta alerta-' + a.sev + '">' +
+    '<span class="ico" aria-hidden="true">' + ICONES[a.sev] + '</span>' +
+    '<div class="txt"><h4>' + esc(a.titulo) + '</h4><p>' + esc(a.texto) + '</p>' +
+    (a.acao ? '<p class="acao">→ ' + esc(a.acao) + '</p>' : '') +
+    (a.ir ? '<button class="btn btn-mini" data-ir="' + a.ir + '">' + esc(a.irTexto || 'Ver detalhe') + '</button>' : '') +
+    '</div></div>';
+}
+
+/* ------------------------------------------------------------
+   TABELA GENÉRICA — ordenação, busca, filtro e exportação
+   ------------------------------------------------------------ */
+var TABELAS = {};
+
+function definirTabela(id, cfg){
+  TABELAS[id] = {cfg:cfg, dados:[], col:cfg.ordemInicial || null, dir:cfg.dirInicial || 'desc'};
+  var host = $(cfg.alvo);
+  if(host && !host.dataset.ligado){
+    host.dataset.ligado = '1';
+    host.addEventListener('click', function(ev){
+      var th = ev.target.closest ? ev.target.closest('th[data-col]') : null;
+      if(!th) return;
+      var t = TABELAS[id], c = th.getAttribute('data-col');
+      if(t.col === c) t.dir = (t.dir === 'asc' ? 'desc' : 'asc');
+      else { t.col = c; var def = t.cfg.colunas.filter(function(x){ return x.ch === c; })[0];
+             t.dir = (def && def.tipo === 'num') ? 'desc' : 'asc'; }
+      renderTabela(id);
+    });
+  }
+}
+function dadosTabela(id, dados){ TABELAS[id].dados = dados; }
+
+function linhasVisiveis(id){
+  var t = TABELAS[id], linhas = t.dados.slice();
+  if(t.cfg.filtro) linhas = linhas.filter(t.cfg.filtro);
+  if(t.cfg.busca && t.cfg.termo) {
+    var termo = t.cfg.termo.toLowerCase();
+    linhas = linhas.filter(function(l){ return String(t.cfg.busca(l)).toLowerCase().indexOf(termo) > -1; });
+  }
+  if(t.col){
+    var def = t.cfg.colunas.filter(function(x){ return x.ch === t.col; })[0];
+    if(def){
+      var sinal = t.dir === 'asc' ? 1 : -1;
+      linhas.sort(function(a, b){
+        var va = def.val(a), vb = def.val(b);
+        var na = (va === null || va === undefined || (typeof va === 'number' && !isFinite(va)));
+        var nb = (vb === null || vb === undefined || (typeof vb === 'number' && !isFinite(vb)));
+        if(na && nb) return 0;
+        if(na) return 1;
+        if(nb) return -1;
+        if(typeof va === 'number' && typeof vb === 'number') return (va - vb) * sinal;
+        return String(va).localeCompare(String(vb), 'pt-BR') * sinal;
+      });
+    }
+  }
+  return linhas;
+}
+
+function renderTabela(id){
+  var t = TABELAS[id], host = $(t.cfg.alvo);
+  if(!host) return;
+  var linhas = linhasVisiveis(id);
+  if(!linhas.length){ host.innerHTML = '<div class="vazio">' + esc(t.cfg.vazio || 'Nenhum registro no filtro aplicado') + '</div>'; return; }
+
+  var cab = t.cfg.colunas.map(function(c){
+    var seta = t.col === c.ch ? ' <span class="seta">' + (t.dir === 'asc' ? '▲' : '▼') + '</span>' : '';
+    return '<th class="ordenavel ' + (c.tipo === 'num' ? 'n' : (c.cls || '')) + '" data-col="' + c.ch + '" scope="col"' +
+           (c.larg ? ' style="min-width:' + c.larg + 'px"' : '') +
+           (c.ajuda ? ' title="' + esc(c.ajuda) + '"' : '') + '>' + esc(c.tit) + seta + '</th>';
+  }).join('');
+
+  var temExtra = false;
+  var corpo = linhas.map(function(l){
+    var cls = t.cfg.classeLinha ? t.cfg.classeLinha(l) : '';
+    var linha = '<tr class="principal ' + cls + '">' + t.cfg.colunas.map(function(c){
+      var conteudo = c.html ? c.html(l) : formatarCelula(c, c.val(l));
+      return '<td class="' + (c.tipo === 'num' ? 'n' : (c.cls || '')) + '">' + conteudo + '</td>';
+    }).join('') + '</tr>';
+    var extra = t.cfg.linhaExtra ? t.cfg.linhaExtra(l) : '';
+    if(extra){
+      temExtra = true;
+      linha += '<tr class="linha-extra ' + cls + '"><td colspan="' + t.cfg.colunas.length + '">' + extra + '</td></tr>';
+    }
+    return linha;
+  }).join('');
+
+  var rodape = '';
+  if(t.cfg.totalizador){
+    var tot = t.cfg.totalizador(linhas);
+    rodape = '<tfoot><tr>' + t.cfg.colunas.map(function(c){
+      var v = tot[c.ch];
+      return '<td class="' + (c.tipo === 'num' ? 'n' : '') + '">' + (v === undefined ? '' : v) + '</td>';
+    }).join('') + '</tr></tfoot>';
+  }
+  host.innerHTML = '<table class="tab' + (temExtra ? ' com-extra' : '') + '"><thead><tr>' + cab +
+    '</tr></thead><tbody>' + corpo + '</tbody>' + rodape + '</table>';
+}
+function formatarCelula(c, v){
+  if(v === null || v === undefined || (typeof v === 'number' && !isFinite(v))) return '—';
+  return c.tipo === 'num' ? fmt(v, c.dec === undefined ? 2 : c.dec) : esc(v);
+}
+
+/* ------------------------------------------------------------
+   EXPORTAÇÃO CSV — separador ";", vírgula decimal, BOM UTF-8
+   ------------------------------------------------------------ */
+function campoCSV(v){
+  if(v === null || v === undefined) return '';
+  var t = (typeof v === 'number') ? (isFinite(v) ? String(v).replace('.', ',') : '') : String(v);
+  return /[";\n\r]/.test(t) ? '"' + t.replace(/"/g, '""') + '"' : t;
+}
+function baixarCSV(nome, cabecalho, linhas){
+  var txt = cabecalho.map(campoCSV).join(';') + '\r\n' +
+            linhas.map(function(l){ return l.map(campoCSV).join(';'); }).join('\r\n');
+  var blob = new Blob(['﻿' + txt], {type:'text/csv;charset=utf-8;'});
+  var url = URL.createObjectURL(blob), a = document.createElement('a');
+  a.href = url; a.download = nome; document.body.appendChild(a); a.click();
+  document.body.removeChild(a); setTimeout(function(){ URL.revokeObjectURL(url); }, 1500);
+}
+function exportarTabela(id, nome){
+  var t = TABELAS[id];
+  if(!t) return;
+  var linhas = linhasVisiveis(id);
+  if(!linhas.length){ alert('Não há linhas para exportar no filtro atual.'); return; }
+  baixarCSV(nome, t.cfg.colunas.map(function(c){ return c.tit; }),
+    linhas.map(function(l){ return t.cfg.colunas.map(function(c){ return c.csv ? c.csv(l) : c.val(l); }); }));
+}
+
+/* ------------------------------------------------------------
+   DEFINIÇÃO DAS TABELAS
+   ------------------------------------------------------------ */
+function definirTodasAsTabelas(){
+  definirTabela('conferencia', {
+    alvo:'#conferencia-tabela', vazio:'Nenhum total apurado.',
+    colunas:[
+      {ch:'apuracao', tit:'Apuração', val:function(l){ return l.apuracao; },
+       html:function(l){ return '<b>' + esc(l.apuracao) + '</b><span class="obs">' + esc(l.origem) + '</span>'; }},
+      {ch:'horas', tit:'Horas padrão', tipo:'num', dec:6, val:function(l){ return l.horas; }},
+      {ch:'dif', tit:'Diferença p/ a linha acima', tipo:'num', dec:6, val:function(l){ return l.dif; }},
+      {ch:'perc', tit:'%', tipo:'num', dec:2, val:function(l){ return l.perc; },
+       html:function(l){ return l.perc === null ? '—' : pct(l.perc, 2); }},
+      {ch:'situacao', tit:'Situação', val:function(l){ return l.situacao; },
+       html:function(l){ return l.divergente ? selo('Divergente', 'critico') : (l.dif === null ? '—' : selo('Confere', 'ok')); }}
+    ]
+  });
+
+  definirTabela('subtotais', {
+    alvo:'#subtotais-tabela', vazio:'Todos os subtotais por produto conferem com a soma das linhas.',
+    ordemInicial:'diferenca',
+    colunas:[
+      {ch:'produto', tit:'Produto', val:function(l){ return l.produto; }, cls:'mono'},
+      {ch:'descricao', tit:'Descrição', val:function(l){ return l.descricao || ''; }, cls:'desc', larg:210},
+      {ch:'subtotalRelatorio', tit:'Subtotal do relatório', tipo:'num', dec:6, val:function(l){ return l.subtotalRelatorio; }},
+      {ch:'somaLinhas', tit:'Soma das linhas', tipo:'num', dec:6, val:function(l){ return l.somaLinhas; }},
+      {ch:'diferenca', tit:'Diferença', tipo:'num', dec:6, val:function(l){ return l.diferenca; }},
+      {ch:'percentual', tit:'%', tipo:'num', dec:2, val:function(l){ return l.percentual; },
+       html:function(l){ return pct(l.percentual, 2); }},
+      {ch:'leitura', tit:'Leitura', val:function(l){ return l.diferenca > 0 ? 'sobra' : 'falta'; },
+       html:function(l){
+         return l.diferenca > 0
+           ? selo('Subtotal maior que as linhas', 'atencao') + '<span class="obs">Provável perna de OF fora do período importado.</span>'
+           : selo('Subtotal menor que as linhas', 'atencao') + '<span class="obs">Linha somada em duplicidade ou subtotal desatualizado no ERP.</span>';
+       }}
+    ]
+  });
+
+  definirTabela('produtos', {
+    alvo:'#tab-produtos', vazio:'Nenhum produto com OF válida no período.', ordemInicial:'minutos',
+    colunas:[
+      {ch:'produto', tit:'Produto', val:function(l){ return l.produto; }, cls:'mono', larg:98},
+      {ch:'descricao', tit:'Descrição', val:function(l){ return l.descricao || ''; }, cls:'desc', larg:210},
+      {ch:'qtdeOFsValidas', tit:'OFs válidas', tipo:'num', dec:0, val:function(l){ return l.qtdeOFsValidas; },
+       html:function(l){ return fmt(l.qtdeOFsValidas, 0) + '<span class="obs">de ' + fmt(l.qtdeOFs, 0) + ' no período</span>'; }},
+      {ch:'qtde', tit:'Peças', tipo:'num', dec:0, val:function(l){ return l.qtde; }},
+      {ch:'minutos', tit:'Min reais', tipo:'num', dec:0, val:function(l){ return l.minutos; }},
+      {ch:'horasPadrao', tit:'H padrão', tipo:'num', dec:4, val:function(l){ return l.horasPadrao; }},
+      {ch:'pecasPorMinuto', tit:'pç/min (todas)', tipo:'num', dec:3, val:function(l){ return l.pecasPorMinuto; }},
+      {ch:'pecasPorMinutoLimpo', tit:'pç/min (sem anômalas)', tipo:'num', dec:3, val:function(l){ return l.pecasPorMinutoLimpo; },
+       html:function(l){
+         var base = fmt(l.pecasPorMinutoLimpo, 3);
+         if(l.ofsDescartadasRitmo > 0) base += '<span class="obs">' + l.ofsDescartadasRitmo + ' OF com parada embutida fora da conta</span>';
+         return base;
+       }},
+      {ch:'pecasPorHoraLimpo', tit:'pç/h (sem anômalas)', tipo:'num', dec:1, val:function(l){ return l.pecasPorHoraLimpo; }},
+      {ch:'segPecaReal', tit:'s/pç real', tipo:'num', dec:2, val:function(l){ return l.segPecaReal; }},
+      {ch:'segPecaPadrao', tit:'s/pç padrão', tipo:'num', dec:2, val:function(l){ return l.segPecaPadrao; },
+       html:function(l){
+         if(l.padraoIndisponivel) return selo('Indisponível', 'info');
+         var base = fmt(l.segPecaPadrao, 2);
+         if(l.padraoInstavel) base += '<span class="obs">instável: ' + fmt(l.padraoOFMin, 2) + ' a ' + fmt(l.padraoOFMax, 2) + ' s/pç entre as OFs</span>';
+         return base;
+       }},
+      {ch:'aderencia', tit:'Aderência', tipo:'num', dec:1, val:function(l){ return l.aderencia; },
+       html:function(l){ return '<span class="' + classeAderencia(l.aderencia) + '"><b>' + pct(l.aderencia) + '</b></span>'; }},
+      {ch:'sinais', tit:'Sinalizadores', cls:'explicacao', larg:210, val:function(l){ return l.anomalias.length + (l.qtdeAnomalas ? 1 : 0); },
+       html:function(l){
+         var s = '';
+         l.anomalias.forEach(function(a){ s += selo(a.titulo, a.severidade); });
+         if(l.qtdeAnomalas) s += selo(l.qtdeAnomalas + ' OF com anomalia', 'atencao');
+         if(l.qtdePendentes) s += selo(l.qtdePendentes + ' OF pendente', 'info', '◔');
+         return s || selo('Sem ocorrência', 'ok');
+       },
+       csv:function(l){
+         var t = l.anomalias.map(function(a){ return a.titulo + ': ' + a.texto; });
+         if(l.qtdeAnomalas) t.push(l.qtdeAnomalas + ' OF com anomalia');
+         return t.join(' | ');
+       }}
+    ],
+    linhaExtra:function(l){
+      if(!l.anomalias.length) return '';
+      return l.anomalias.map(function(a){ return ICONES[a.severidade] + ' <b>' + esc(a.titulo) + ':</b> ' + esc(a.texto); }).join('<br>');
+    },
+    totalizador:function(linhas){
+      var q = soma(linhas, function(l){ return l.qtde; }), m = soma(linhas, function(l){ return l.minutos; });
+      var hp = soma(linhas, function(l){ return l.horasPadrao; });
+      return {produto:'Total', qtde:fmt(q, 0), minutos:fmt(m, 0), horasPadrao:fmt(hp, 4),
+              pecasPorMinuto:m ? fmt(q / m, 3) : '—',
+              aderencia:m ? pct(hp / (m / 60) * 100) : '—'};
+    }
+  });
+
+  definirTabela('ordens', {
+    alvo:'#tab-ordens-lista', vazio:'Nenhuma ordem no filtro aplicado', ordemInicial:null,
+    busca:function(l){ return l.ordem + ' ' + l.produto + ' ' + l.descricao + ' ' + l.maquina + ' ' + l.funcionarioNome; },
+    filtro:function(l){
+      var f = ESTADO.filtroOrdens;
+      if(f === 'anomalas') return l.anomalias.length > 0;
+      if(f === 'pendentes') return l.pendente;
+      if(f === 'partidas') return l.partida;
+      if(f === 'limpas') return l.elegivel && !l.anomalias.length;
+      return true;
+    },
+    classeLinha:function(l){
+      if(l.pendente || l.anomalias.some(function(a){ return a.severidade === 'critico'; })) return 'linha-critica';
+      return l.anomalias.length ? 'linha-atencao' : '';
+    },
+    colunas:[
+      {ch:'ordem', tit:'OF', val:function(l){ return l.ordem; }, cls:'mono',
+       html:function(l){ return '<b class="mono">' + esc(l.ordem) + '</b>' + (l.partida ? '<span class="obs">⇄ ' + l.datas.join(' + ') + '</span>' : ''); }},
+      {ch:'data', tit:'Data', val:function(l){ return l.datas.join(' + '); }},
+      {ch:'produto', tit:'Produto', val:function(l){ return l.produto; }, cls:'mono', larg:98},
+      {ch:'descricao', tit:'Descrição', val:function(l){ return l.descricao || ''; }, cls:'desc', larg:210},
+      {ch:'qtdeProduzida', tit:'Qtde prod.', tipo:'num', dec:0, val:function(l){ return l.qtdeProduzida; },
+       html:function(l){
+         var s = fmt(l.qtdeProduzida, 0);
+         if(l.qtdeOrdem && l.qtdeProduzida !== l.qtdeOrdem) s += '<span class="obs">ordem: ' + fmt(l.qtdeOrdem, 0) + '</span>';
+         return s;
+       }},
+      {ch:'inicio', tit:'Início', val:function(l){ return l.legs[0].horaInicioMin; },
+       html:function(l){ return '<span class="mono">' + esc(l.legs[0].horaInicioTxt) + '</span>'; },
+       csv:function(l){ return l.legs[0].horaInicioTxt; }},
+      {ch:'fim', tit:'Fim', val:function(l){ return l.legs[l.legs.length - 1].horaFimMin; },
+       html:function(l){ return '<span class="mono">' + esc(l.legs[l.legs.length - 1].horaFimTxt) + '</span>'; },
+       csv:function(l){ return l.legs[l.legs.length - 1].horaFimTxt; }},
+      {ch:'minutosReais', tit:'Min reais', tipo:'num', dec:0, val:function(l){ return l.elegivel ? l.minutosReais : null; }},
+      {ch:'pecasPorMinuto', tit:'pç/min', tipo:'num', dec:3, val:function(l){ return l.pecasPorMinuto; }},
+      {ch:'pecasPorHora', tit:'pç/h', tipo:'num', dec:1, val:function(l){ return l.pecasPorHora; }},
+      {ch:'segPecaReal', tit:'s/pç real', tipo:'num', dec:2, val:function(l){ return l.segPecaReal; }},
+      {ch:'segPecaPadrao', tit:'s/pç padrão', tipo:'num', dec:4, val:function(l){ return l.segPecaPadrao; }},
+      {ch:'horasPadrao', tit:'H padrão', tipo:'num', dec:6, val:function(l){ return l.horasPadrao; }},
+      {ch:'aderencia', tit:'Aderência', tipo:'num', dec:1, val:function(l){ return l.aderencia; },
+       html:function(l){ return '<span class="' + classeAderencia(l.aderencia) + '"><b>' + pct(l.aderencia) + '</b></span>'; }},
+      {ch:'sinais', tit:'Sinalizadores', cls:'explicacao', larg:210, val:function(l){ return l.anomalias.length; },
+       html:function(l){ return selosDaOrdem(l); },
+       csv:function(l){
+         var t = l.anomalias.map(function(a){ return a.titulo + ': ' + a.texto; });
+         if(l.situacao !== 'ok') t.unshift(l.situacao);
+         return t.join(' | ');
+       }}
+    ],
+    linhaExtra:function(l){
+      var partes = [];
+      if(l.pendente && l.motivoPendencia)
+        partes.push(ICONES.critico + ' <b>Fora dos cálculos:</b> ' + esc(l.motivoPendencia));
+      l.anomalias.forEach(function(a){
+        partes.push(ICONES[a.severidade] + ' <b>' + esc(a.titulo) + ':</b> ' + esc(a.texto));
+      });
+      return partes.join('<br>');
+    },
+    totalizador:function(linhas){
+      var el = linhas.filter(function(l){ return l.elegivel; });
+      var q = soma(el, function(l){ return l.qtdeProduzida; }), m = soma(el, function(l){ return l.minutosReais; });
+      return {ordem:'Total (' + linhas.length + ' OFs, ' + el.length + ' válidas)', qtdeProduzida:fmt(q, 0),
+              minutosReais:fmt(m, 0), pecasPorMinuto:m ? fmt(q / m, 3) : '—',
+              horasPadrao:fmt(soma(el, function(l){ return l.horasPadrao; }), 6)};
+    }
+  });
+
+  definirTabela('pendencias', {
+    alvo:'#tab-pendencias-lista',
+    vazio:'Nenhuma pendência: todas as ordens do período estão fechadas, com quantidade apontada e horário consistente.',
+    ordemInicial:'decorrido',
+    colunas:[
+      {ch:'ordem', tit:'OF', val:function(l){ return l.ordem; }, cls:'mono'},
+      {ch:'situacao', tit:'Situação', cls:'explicacao', larg:170, val:function(l){ return l.situacao; },
+       html:function(l){ return selosDaOrdem(l); },
+       csv:function(l){ return l.situacao + ' — ' + l.motivoPendencia; }},
+      {ch:'data', tit:'Data', val:function(l){ return l.datas.join(' + '); }},
+      {ch:'produto', tit:'Produto', val:function(l){ return l.produto; }, cls:'mono', larg:98},
+      {ch:'descricao', tit:'Descrição', val:function(l){ return l.descricao || ''; }, cls:'desc', larg:210},
+      {ch:'maquina', tit:'Máquina', val:function(l){ return l.maquina; }},
+      {ch:'funcionario', tit:'Operador', val:function(l){ return (l.funcionario || '') + ' ' + (l.funcionarioNome || ''); }},
+      {ch:'qtdeOrdem', tit:'Qtde ordem', tipo:'num', dec:0, val:function(l){ return l.qtdeOrdem; }},
+      {ch:'qtdeProduzida', tit:'Qtde prod.', tipo:'num', dec:0, val:function(l){ return l.qtdeProduzida; }},
+      {ch:'inicio', tit:'Início', val:function(l){ return l.legs[0].horaInicioTxt; }, cls:'mono'},
+      {ch:'fim', tit:'Fim', val:function(l){ return l.legs[l.legs.length - 1].horaFimTxt; }, cls:'mono'},
+      {ch:'horasPadrao', tit:'H padrão', tipo:'num', dec:6, val:function(l){ return l.horasPadrao; }},
+      {ch:'decorrido', tit:'Tempo decorrido', tipo:'num', dec:0, val:function(l){ return l.decorridoMin; },
+       html:function(l){
+         if(l.decorridoMin === null) return '—';
+         return '<b>' + minutosParaHHMM(l.decorridoMin) + '</b>';
+       },
+       csv:function(l){ return l.decorridoMin; }},
+      {ch:'decorridoBase', tit:'Referência do tempo', val:function(l){ return l.decorridoBase || ''; },
+       html:function(l){ return l.decorridoBase ? '<span class="obs">' + esc(l.decorridoBase) + '</span>' : '—'; }}
+    ],
+    linhaExtra:function(l){ return ICONES.critico + ' <b>Por que está pendente:</b> ' + esc(l.motivoPendencia); }
+  });
+
+  var colunasRecurso = function(rotulo){
+    return [
+      {ch:'chave', tit:rotulo, val:function(l){ return l.chave; }, cls:'mono',
+       html:function(l){ return '<b class="mono">' + esc(l.chave) + '</b><span class="obs">' + esc(l.nome) + '</span>'; }},
+      {ch:'dias', tit:'Dias', tipo:'num', dec:0, val:function(l){ return l.dias; }},
+      {ch:'qtdeOFs', tit:'OFs', tipo:'num', dec:0, val:function(l){ return l.qtdeOFs; }},
+      {ch:'qtdeProdutos', tit:'Produtos', tipo:'num', dec:0, val:function(l){ return l.qtdeProdutos; }},
+      {ch:'qtde', tit:'Peças', tipo:'num', dec:0, val:function(l){ return l.qtde; }},
+      {ch:'minutos', tit:'Min apontados', tipo:'num', dec:0, val:function(l){ return l.minutos; }},
+      {ch:'semOF', tit:'Min sem OF', tipo:'num', dec:0, val:function(l){ return l.semOF; },
+       html:function(l){ return l.semOF === null ? '—' : '<b>' + fmt(l.semOF, 0) + '</b><span class="obs">' + pct(l.percSemOF) + ' da janela de turno</span>'; }},
+      {ch:'horasPadrao', tit:'H padrão', tipo:'num', dec:4, val:function(l){ return l.horasPadrao; }},
+      {ch:'aderencia', tit:'Aderência', tipo:'num', dec:1, val:function(l){ return l.aderencia; },
+       html:function(l){ return '<span class="' + classeAderencia(l.aderencia) + '"><b>' + pct(l.aderencia) + '</b></span>'; }},
+      {ch:'pecasPorMinuto', tit:'pç/min agregado', tipo:'num', dec:3, val:function(l){ return l.pecasPorMinuto; },
+       html:function(l){ return fmt(l.pecasPorMinuto, 3) + '<span class="obs">não use para programar</span>'; }},
+      {ch:'faixa', tit:'Faixa de ritmo por produto', val:function(l){ return l.ritmoMax; },
+       html:function(l){
+         if(l.ritmoMin === null) return '—';
+         var razao = l.ritmoMin > 0 ? l.ritmoMax / l.ritmoMin : null;
+         return fmt(l.ritmoMin, 2) + ' a ' + fmt(l.ritmoMax, 2) + ' pç/min' +
+                (razao ? '<span class="obs">variação de ' + fmt(razao, 1) + '× entre produtos — é essa quebra que serve para programar</span>' : '');
+       },
+       csv:function(l){ return l.ritmoMin === null ? '' : fmt(l.ritmoMin, 3) + ' a ' + fmt(l.ritmoMax, 3); }},
+      {ch:'ocorrencias', tit:'Ocorrências', val:function(l){ return l.qtdeAnomalas + l.qtdePendentes; },
+       html:function(l){
+         var s = '';
+         if(l.qtdeAnomalas) s += selo(l.qtdeAnomalas + ' OF com anomalia', 'atencao');
+         if(l.qtdePendentes) s += selo(l.qtdePendentes + ' OF pendente', 'critico', '◔');
+         return s || selo('Sem ocorrência', 'ok');
+       },
+       csv:function(l){ return l.qtdeAnomalas + ' anômalas / ' + l.qtdePendentes + ' pendentes'; }}
+    ];
+  };
+  definirTabela('maquinas', {alvo:'#tab-maquinas', vazio:'Nenhuma máquina no período.', ordemInicial:'minutos', colunas:colunasRecurso('Máquina')});
+  definirTabela('funcionarios', {alvo:'#tab-funcionarios', vazio:'Nenhum funcionário no período.', ordemInicial:'minutos', colunas:colunasRecurso('Funcionário')});
+
+  definirTabela('lacunas', {
+    alvo:'#tab-lacunas', vazio:'Nenhuma lacuna: os apontamentos cobrem a janela de turno inteira.', ordemInicial:'min',
+    colunas:[
+      {ch:'data', tit:'Data', val:function(l){ return l.data; }},
+      {ch:'maquina', tit:'Máquina', val:function(l){ return l.maquina; }, cls:'mono'},
+      {ch:'funcionario', tit:'Operador', val:function(l){ return l.funcionario + ' ' + (l.funcionarioNome || ''); }},
+      {ch:'de', tit:'De', val:function(l){ return minutosParaHHMM(l.deMin); }, cls:'mono'},
+      {ch:'ate', tit:'Até', val:function(l){ return minutosParaHHMM(l.ateMin); }, cls:'mono'},
+      {ch:'min', tit:'Minutos sem OF', tipo:'num', dec:0, val:function(l){ return l.min; }},
+      {ch:'antes', tit:'OF anterior', val:function(l){ return l.antes; }, cls:'mono'},
+      {ch:'depois', tit:'OF seguinte', val:function(l){ return l.depois; }, cls:'mono'}
+    ],
+    totalizador:function(linhas){ return {data:'Total', min:fmt(soma(linhas, function(l){ return l.min; }), 0)}; }
+  });
+
+  definirTabela('tempo', {
+    alvo:'#resumo-tempo', vazio:'Sem apontamento válido para compor a janela de turno.',
+    colunas:[
+      {ch:'data', tit:'Data', val:function(l){ return l.data; }},
+      {ch:'maquina', tit:'Máquina', val:function(l){ return l.maquina; }, cls:'mono'},
+      {ch:'funcionario', tit:'Operador', val:function(l){ return l.funcionario + ' ' + (l.funcionarioNome || ''); }},
+      {ch:'inicio', tit:'1º início', val:function(l){ return minutosParaHHMM(l.inicioMin); }, cls:'mono'},
+      {ch:'fim', tit:'Último fim', val:function(l){ return minutosParaHHMM(l.fimMin); }, cls:'mono'},
+      {ch:'janela', tit:'Janela (min)', tipo:'num', dec:0, val:function(l){ return l.janela; }},
+      {ch:'coberto', tit:'Apontado (min)', tipo:'num', dec:0, val:function(l){ return l.coberto; }},
+      {ch:'semOF', tit:'Sem OF (min)', tipo:'num', dec:0, val:function(l){ return l.semOF; },
+       html:function(l){ return '<b>' + fmt(l.semOF, 0) + '</b><span class="obs">' + pct(l.janela ? l.semOF / l.janela * 100 : null) + ' da janela</span>'; }},
+      {ch:'qtdeApontamentos', tit:'Apontamentos', tipo:'num', dec:0, val:function(l){ return l.qtdeApontamentos; }},
+      {ch:'sobreposicao', tit:'Sobreposição (min)', tipo:'num', dec:0, val:function(l){ return l.sobreposicao; },
+       html:function(l){ return l.sobreposicao > 0 ? selo(fmt(l.sobreposicao, 0) + ' min sobrepostos', 'critico') : '0'; }}
+    ],
+    totalizador:function(linhas){
+      return {data:'Total', janela:fmt(soma(linhas, function(l){ return l.janela; }), 0),
+              coberto:fmt(soma(linhas, function(l){ return l.coberto; }), 0),
+              semOF:fmt(soma(linhas, function(l){ return l.semOF; }), 0)};
+    }
+  });
+}
+
+/* ------------------------------------------------------------
+   PENDÊNCIAS — motivo em texto e tempo decorrido
+   ------------------------------------------------------------ */
+function enriquecerPendencias(modelo){
+  var d = modelo.diagnostico, refISO = null, refMin = null;
+  if(d.emissaoData){
+    var iso = dataParaISO(d.emissaoData);
+    refISO = iso ? iso.iso : null;
+    if(d.emissaoHora){
+      var p = d.emissaoHora.split(':');
+      refMin = parseInt(p[0], 10) * 60 + parseInt(p[1], 10);
+    }else refMin = 0;
+  }
+  var ultimoFim = {};
+  modelo.turnos.forEach(function(t){
+    var l = modelo.registros.filter(function(r){ return r.dataBR === t.data; })[0];
+    var chave = l ? l.data : t.data;
+    ultimoFim[chave] = Math.max(ultimoFim[chave] || 0, t.fimMin);
+  });
+
+  modelo.ordens.filter(function(o){ return o.pendente; }).forEach(function(o){
+    var leg = o.legs[0], ini = leg.horaInicioMin;
+    o.decorridoMin = null; o.decorridoBase = '';
+    var contaTempo = (o.situacao === 'aberta' || o.situacao === 'incompleta');
+    if(ini !== null && contaTempo){
+      if(refISO && refMin !== null && leg.data){
+        var dias = Math.round((Date.parse(refISO) - Date.parse(leg.data)) / 86400000);
+        if(dias >= 0){
+          o.decorridoMin = dias * 1440 + refMin - ini;
+          o.decorridoBase = 'até a emissão do relatório (' + d.emissaoData + ' ' + (d.emissaoHora || '') + ')';
+        }
+      }
+      if(o.decorridoMin === null && ultimoFim[leg.data]){
+        o.decorridoMin = ultimoFim[leg.data] - ini;
+        o.decorridoBase = 'no mínimo — até o último apontamento do dia';
+      }
+    }
+    var q = fmt(o.qtdeProduzida, 0);
+    o.motivoPendencia =
+      o.situacao === 'aberta'
+        ? 'HR.FIM = 0,00: apontamento aberto e nunca fechado. Sem fechamento não há tempo real, então a OF fica fora de ritmo e de aderência — e a carga real da máquina aparece menor do que é. Várias OFs abertas ao mesmo tempo na mesma máquina indicam abertura em bloco sem fechamento, o que é fisicamente impossível de executar em paralelo.'
+      : o.situacao === 'incompleta'
+        ? 'QTDE PROD. = 0 com horário fechado: é a perna de uma ordem partida entre dias, e o ERP rateou o tempo padrão entre as datas. A contraparte com a quantidade está fora do período importado. Importe também o dia seguinte para a OF fechar e entrar nos cálculos.'
+      : o.situacao === 'duracao-zero'
+        ? 'HR.INICIO igual a HR.FIM com ' + q + ' peças apontadas: duração zero geraria ritmo infinito, então a OF fica fora dos indicadores. Normalmente é sobra de apontamento lançada junto com a ordem anterior.'
+      : o.situacao === 'hora-invalida'
+        ? 'Campo de hora fora do formato HH.MM: ' + o.legs.map(function(l){ return l.errosHora.join('; '); }).filter(Boolean).join(' / ') + '. A linha foi mantida na lista, mas não é convertida no chute.'
+      : o.situacao === 'virada-dia'
+        ? 'HR.FIM anterior ao HR.INICIO (' + leg.horaInicioTxt + ' → ' + leg.horaFimTxt + '). Pode ser turno cruzando a meia-noite ou erro de digitação. O app não soma 24 h automaticamente: confirme a regra de turno antes de considerar esta OF.'
+        : 'Pendência não classificada.';
+  });
+}
+
+/* ------------------------------------------------------------
+   ALERTAS DO PERÍODO — o que exige ação, antes dos agregados
+   ------------------------------------------------------------ */
+function montarAlertas(m){
+  var a = [], r = m.resumo, d = m.diagnostico, c = m.conferencia;
+
+  if(d.falhas.length)
+    a.push({sev:'critico', titulo:plural(d.falhas.length, 'linha que o app não conseguiu ler', 'linhas que o app não conseguiu ler'),
+      texto:'Essas linhas não entraram em nenhum cálculo. Nenhuma linha é descartada em silêncio: o texto original de cada uma está na aba Importar.',
+      acao:'Confira na aba Importar antes de usar qualquer número desta análise.', ir:'importar', irTexto:'Ver linhas'});
+
+  var pecasDiv = m.pecas.filter(function(p){ return p.divergente; });
+  if(pecasDiv.length){
+    var pior = pecasDiv[0];
+    var corPior = pior.cores.filter(function(x){ return x.padraoForaDaFaixa; })
+                    .sort(function(x, y){ return Math.abs(y.desvioReferencia) - Math.abs(x.desvioReferencia); })[0];
+    a.push({sev:'critico', titulo:plural(pecasDiv.length, 'peça com tempo padrão divergente entre cores', 'peças com tempo padrão divergente entre cores'),
+      texto:'A mesma peça física está cadastrada com tempos padrão diferentes conforme a cor. Como a cor não altera o ciclo de furação, é erro de cadastro — e ele distorce carga-máquina, lead time e sequenciamento.' +
+        (corPior ? ' Pior caso: ' + corPior.produto + ' a ' + fmt(corPior.segPecaPadrao, 2) + ' s/pç contra referência de ' + fmt(pior.referencia, 2) + ' s/pç (' + fmt(corPior.desvioReferencia * 100, 1) + '%).' : ''),
+      acao:'Levar a lista da aba Peça × cor para a Engenharia corrigir o tempo padrão no cadastro do item.',
+      ir:'peca', irTexto:'Ver comparativo'});
+  }
+
+  var instaveis = m.produtos.filter(function(p){ return p.padraoInstavel; });
+  if(instaveis.length)
+    a.push({sev:'critico', titulo:plural(instaveis.length, 'item com tempo padrão inconsistente entre as próprias OFs', 'itens com tempo padrão inconsistente entre as próprias OFs'),
+      texto:'O mesmo código aparece com tempos padrão diferentes em OFs do mesmo período: ' +
+        instaveis.slice(0, 3).map(function(p){ return p.produto + ' (' + fmt(p.padraoOFMin, 2) + ' a ' + fmt(p.padraoOFMax, 2) + ' s/pç)'; }).join(', ') +
+        '. Tempo padrão é atributo fixo do item — variar entre ordens significa cadastro alterado no meio do período ou rateio indevido do ERP.',
+      acao:'Resolver dentro do item antes de comparar cores: enquanto isso, ele fica fora do comparativo Peça × cor.',
+      ir:'produto', irTexto:'Ver produtos'});
+
+  if(r.ofsAbertas)
+    a.push({sev:'critico', titulo:plural(r.ofsAbertas, 'ordem aberta sem fechamento', 'ordens abertas sem fechamento'),
+      texto:'HR.FIM = 0,00. Sem fechamento não existe tempo real, a OF fica fora de todos os indicadores e a carga da máquina aparece menor do que é.',
+      acao:'Cobrar o fechamento do apontamento com o operador e o líder do turno.', ir:'pendencias', irTexto:'Ver pendências'});
+
+  if(r.ofsIncompletas)
+    a.push({sev:'atencao', titulo:plural(r.ofsIncompletas, 'perna de ordem partida sem contraparte no período', 'pernas de ordem partida sem contraparte no período'),
+      texto:'OFs com QTDE PROD. = 0 e horário fechado: começaram num dia e terminaram no seguinte, e o ERP rateou o tempo padrão entre as datas. Só uma das pontas está no arquivo importado.',
+      acao:'Reimportar o relatório incluindo o dia seguinte para a OF fechar e entrar no ritmo.', ir:'pendencias', irTexto:'Ver pendências'});
+
+  if(r.ofsHoraInvalida || r.ofsViradaDia)
+    a.push({sev:'critico', titulo:plural(r.ofsHoraInvalida + r.ofsViradaDia, 'ordem com horário inconsistente', 'ordens com horário inconsistente'),
+      texto:'Campo de hora fora do formato HH.MM (minuto acima de 59) ou HR.FIM anterior ao HR.INICIO. O app sinaliza em vez de converter no chute, porque tratar HH.MM como decimal erraria todos os tempos.',
+      acao:'Corrigir o apontamento no ERP ou confirmar se existe turno cruzando a meia-noite.', ir:'pendencias', irTexto:'Ver pendências'});
+
+  if(c.linhasVsSubtotais && c.linhasVsSubtotais.divergente)
+    a.push({sev:'atencao', titulo:'Subtotais do relatório não batem com a soma das linhas',
+      texto:'Soma das linhas: ' + fmt(c.somaLinhas, 6) + ' h. Soma dos subtotais "Total de horas": ' + fmt(c.somaSubtotais, 6) +
+        ' h. Diferença de ' + fmt(c.linhasVsSubtotais.dif, 6) + ' h (' + pct(c.linhasVsSubtotais.perc, 2) + ').',
+      acao:'Ver quais produtos concentram a diferença na aba Importar — normalmente são pernas de OF fora do período.',
+      ir:'importar', irTexto:'Ver conferência'});
+
+  if(c.subtotaisVsRodape && c.subtotaisVsRodape.divergente)
+    a.push({sev:'atencao', titulo:'Rodapé "Total geral de horas" não bate com os próprios subtotais',
+      texto:'Soma dos subtotais: ' + fmt(c.somaSubtotais, 6) + ' h contra ' + fmt(c.rodape, 6) + ' h no rodapé — diferença de ' +
+        fmt(c.subtotaisVsRodape.dif, 6) + ' h (' + pct(c.subtotaisVsRodape.perc, 2) + '). O relatório não fecha nem consigo mesmo.',
+      acao:'Não usar o rodapé como fonte de carga-máquina até o ERP ser corrigido.', ir:'importar', irTexto:'Ver conferência'});
+
+  var paradas = m.ordens.filter(function(o){ return temAnomalia(o, 'parada-embutida'); });
+  if(paradas.length)
+    a.push({sev:'atencao', titulo:plural(paradas.length, 'ordem com parada embutida', 'ordens com parada embutida'),
+      texto:'Duração real muito acima das OFs gêmeas do mesmo produto e quantidade — sinal de almoço, setup ou espera de material lançados dentro da ordem em vez de apontados como parada. Total de ' +
+        fmt(soma(paradas, function(o){ return o.paradaExcedente || 0; }), 0) + ' min a mais do que o esperado.',
+      acao:'Apontar parada como parada: hoje esse tempo aparece como se fosse produção lenta.', ir:'ordens', irTexto:'Ver ordens'});
+
+  var rapidas = m.ordens.filter(function(o){ return temAnomalia(o, 'ritmo-implausivel'); });
+  if(rapidas.length)
+    a.push({sev:'atencao', titulo:plural(rapidas.length, 'ordem com ritmo real implausível', 'ordens com ritmo real implausível'),
+      texto:'Quantidade grande apontada numa janela de horário curta demais para ter sido executada: ' +
+        rapidas.slice(0, 4).map(function(o){ return 'OF ' + o.ordem + ' (' + fmt(o.qtdeProduzida, 0) + ' pç em ' + fmt(o.minutosReais, 0) + ' min)'; }).join(', ') +
+        '. Não é ganho de produtividade, é apontamento em bloco: essas OFs ficam fora do ritmo de referência e do tempo padrão sugerido.',
+      acao:'Conferir o horário real de execução dessas ordens antes de usar o ritmo delas para programar.', ir:'ordens', irTexto:'Ver ordens'});
+
+  var implausiveis = m.ordens.filter(function(o){ return temAnomalia(o, 'padrao-implausivel'); });
+  if(implausiveis.length)
+    a.push({sev:'atencao', titulo:plural(implausiveis.length, 'ordem com tempo padrão implausível', 'ordens com tempo padrão implausível'),
+      texto:'Tempo padrão mais de 5× fora da mediana das outras OFs do mesmo produto. Essas OFs foram retiradas do padrão de referência do produto para não contaminar a análise.',
+      acao:'Verificar o rateio do ERP nessas ordens específicas.', ir:'ordens', irTexto:'Ver ordens'});
+
+  if(m.cadeias.length)
+    a.push({sev:'atencao', titulo:plural(m.cadeias.length, 'bloco de apontamento em sequência colada', 'blocos de apontamento em sequência colada'),
+      texto:'Cadeias em que o HR.FIM de uma OF é exatamente o HR.INICIO da seguinte por mais de 2 h seguidas, sem um minuto de setup ou intervalo: ' +
+        m.cadeias.map(function(x){ return x.maquina + ' ' + x.data + ' ' + x.inicio + '→' + x.fim + ' (' + x.ordens.length + ' OFs)'; }).join('; ') +
+        '. Indica apontamento lançado em bloco depois do fato.',
+      acao:'A análise OF a OF nesses blocos não é confiável; o agregado do bloco continua válido.', ir:'ordens', irTexto:'Ver ordens'});
+
+  if(r.ofsDuracaoZero)
+    a.push({sev:'atencao', titulo:plural(r.ofsDuracaoZero, 'ordem com duração zero', 'ordens com duração zero'),
+      texto:'HR.INICIO igual a HR.FIM com quantidade apontada. Ritmo seria infinito, então ficam fora dos indicadores.',
+      acao:'Conferir se a quantidade não deveria estar na OF anterior.', ir:'pendencias', irTexto:'Ver pendências'});
+
+  if(r.sobreposicao > 0)
+    a.push({sev:'critico', titulo:'Apontamentos sobrepostos no tempo',
+      texto:fmt(r.sobreposicao, 0) + ' min em que a mesma máquina e o mesmo operador aparecem em duas OFs ao mesmo tempo. Fisicamente impossível.',
+      acao:'Revisar o lançamento dessas ordens.', ir:'recurso', irTexto:'Ver máquina e operador'});
+
+  if(r.semOF > 0)
+    a.push({sev:r.percSemOF > 10 ? 'atencao' : 'info', titulo:fmt(r.semOF, 0) + ' min de tempo sem OF (' + pct(r.percSemOF) + ' da janela de turno)',
+      texto:'Tempo dentro da janela de turno que não está coberto por nenhum apontamento: nem produção, nem parada apontada. Janela total de ' +
+        fmt(r.janela, 0) + ' min com ' + fmt(r.janela - r.semOF, 0) + ' min apontados.',
+      acao:'Cada lacuna é uma pergunta para o chão de fábrica: era setup, refeição, manutenção ou falta de apontamento?',
+      ir:'recurso', irTexto:'Ver lacunas'});
+
+  if(!a.length)
+    a.push({sev:'ok', titulo:'Nenhuma ocorrência detectada no período',
+      texto:'Totais conferem, não há ordem aberta, partida incompleta nem anomalia de tempo padrão nas ' + r.ofsTotal + ' OFs importadas.', acao:null});
+
+  var ordem = {critico:0, atencao:1, info:2, ok:3};
+  a.sort(function(x, y){ return ordem[x.sev] - ordem[y.sev]; });
+  return a;
+}
+
+/* ------------------------------------------------------------
+   PEÇA × COR
+   ------------------------------------------------------------ */
+function renderPecas(m){
+  var host = $('#lista-pecas');
+  if(!m.pecas.length){ host.innerHTML = '<div class="vazio">Nenhuma peça com OF válida no período.</div>'; return; }
+
+  host.innerHTML = m.pecas.map(function(g){
+    var situacaoGrupo = g.divergente ? selo('Padrão divergente entre cores', 'critico')
+      : (g.coresInstaveis && g.coresInstaveis.length) ? selo('Comparação suspensa', 'atencao')
+      : (g.qtdeComparaveis < 2) ? selo('Sem base de comparação', 'info')
+      : selo('Padrões coerentes', 'ok');
+    var cabecalho = '<header><h3>' + esc(g.peca) + ' — ' + esc(g.descricaoBase || '') + ' ' + situacaoGrupo +
+      '</h3><span class="desc">' + g.cores.length + ' cor(es) no período · referência de ' + fmt(g.referencia, 2) +
+      ' s/pç (' + esc(g.baseReferencia) + ')</span></header>';
+
+    var linhas = g.cores.map(function(c){
+      var situacao = c.padraoInstavel ? selo('Padrão instável no próprio item', 'critico')
+                   : c.padraoForaDaFaixa ? selo('Padrão a corrigir', 'critico')
+                   : c.padraoIndisponivel ? selo('Padrão indisponível', 'info')
+                   : selo('Padrão aderente', 'ok');
+      var cls = (c.padraoForaDaFaixa || c.padraoInstavel) ? ' class="linha-critica"' : '';
+      return '<tr' + cls + '>' +
+        '<td class="mono"><b>' + esc(c.cor || '—') + '</b><span class="obs">' + esc(c.produto) + '</span></td>' +
+        '<td>' + esc(c.descricao || '') + '</td>' +
+        '<td class="n">' + fmt(c.qtdeLimpa, 0) + (c.ofsDescartadasRitmo ? '<span class="obs">' + fmt(c.qtde, 0) + ' com anômalas</span>' : '') + '</td>' +
+        '<td class="n">' + fmt(c.minutosLimpo, 0) + '</td>' +
+        '<td class="n">' + fmt(c.segPecaRealLimpo, 2) +
+          (c.ofsDescartadasRitmo ? '<span class="obs">' + fmt(c.segPecaReal, 2) + ' com as ' + c.ofsDescartadasRitmo + ' OF anômala(s)</span>' : '') + '</td>' +
+        '<td class="n">' + (c.padraoIndisponivel ? '—' : fmt(c.segPecaPadrao, 2)) +
+          (c.padraoInstavel ? '<span class="obs">' + fmt(c.padraoOFMin, 2) + ' a ' + fmt(c.padraoOFMax, 2) + ' entre as OFs</span>' : '') + '</td>' +
+        '<td class="n">' + (c.desvioReferencia === null ? '—' : pct(c.desvioReferencia * 100)) + '</td>' +
+        '<td class="n ' + classeAderencia(c.aderenciaLimpo) + '"><b>' + pct(c.aderenciaLimpo) + '</b></td>' +
+        '<td class="n">' + fmt(c.padraoSugerido, 2) + '</td>' +
+        '<td class="n">' + (c.impactoHoras === null ? '—' : fmt(c.impactoHoras, 3)) + '</td>' +
+        '<td>' + situacao + '</td></tr>';
+    }).join('');
+
+    var explicacao;
+    if(g.divergente){
+      var fora = g.cores.filter(function(c){ return c.padraoForaDaFaixa; });
+      explicacao = '<b>Por que isto está sinalizado:</b> as cores desta peça diferem em ' + pct(g.dispersao * 100) +
+        ' de tempo padrão (de ' + fmt(g.padraoMin, 2) + ' a ' + fmt(g.padraoMax, 2) + ' s/pç), acima da tolerância de ' +
+        fmt(TOL_PADRAO_ENTRE_CORES * 100, 0) + '%. O tempo real medido no período ficou em ' + fmt(g.realMediana, 2) +
+        ' s/pç de mediana, ou seja, o processo é o mesmo — quem está errado é o cadastro. ' +
+        '<b>Corrigir:</b> ' + fora.map(function(c){ return c.produto + ' de ' + fmt(c.segPecaPadrao, 2) + ' para ' + fmt(c.padraoSugerido, 2) + ' s/pç'; }).join('; ') +
+        '. Impacto na carga-máquina só com o volume deste período: ' +
+        fmt(soma(fora, function(c){ return c.impactoHoras || 0; }), 3) + ' h.';
+    }else if(g.coresInstaveis && g.coresInstaveis.length){
+      explicacao = '<b>Comparação entre cores suspensa:</b> ' + g.coresInstaveis.map(function(c){ return c.produto; }).join(', ') +
+        ' tem tempo padrão inconsistente entre as próprias OFs. Enquanto o item não for padronizado, comparar cores apontaria para o item errado.';
+    }else if(g.cores.length < 2){
+      explicacao = 'Só uma cor desta peça foi produzida no período — sem base de comparação entre cores. Importe um período maior para o comparativo valer.';
+    }else{
+      explicacao = 'Tempos padrão coerentes entre as cores (dispersão de ' + pct((g.dispersao || 0) * 100) + ', dentro da tolerância de ' +
+        fmt(TOL_PADRAO_ENTRE_CORES * 100, 0) + '%). O tempo real medido ficou em ' + fmt(g.realMediana, 2) + ' s/pç de mediana contra padrão de ' +
+        fmt(g.padraoMediana, 2) + ' s/pç.';
+    }
+
+    return '<div class="grupo-peca' + (g.divergente ? ' divergente' : '') + '">' + cabecalho +
+      '<div class="rolagem"><table class="tab"><thead><tr>' +
+      '<th>Cor</th><th>Descrição</th><th class="n">Peças</th><th class="n">Min reais</th>' +
+      '<th class="n">s/pç real</th><th class="n">s/pç padrão</th><th class="n">Desvio do padrão</th>' +
+      '<th class="n">Aderência</th><th class="n">Padrão sugerido</th><th class="n">Impacto (h)</th><th>Situação</th>' +
+      '</tr></thead><tbody>' + linhas + '</tbody></table></div>' +
+      '<div class="explica">' + explicacao +
+      (g.temAnomalaExcluida ? ' <b>Base do tempo real:</b> as OFs marcadas com parada embutida ou ritmo implausível foram retiradas da medição — o tempo padrão tem que refletir execução normal, não turno com almoço dentro da ordem nem quantidade lançada em bloco.' : '') +
+      '</div></div>';
+  }).join('');
+}
+
+function exportarPecas(m){
+  var cab = ['Peça','Descrição da peça','Cor','Produto','Descrição','Peças','Min reais','s/pç real','s/pç padrão',
+             'Referência s/pç','Base da referência','Desvio %','Aderência %','Padrão sugerido s/pç','Impacto horas','Situação'];
+  var linhas = [];
+  m.pecas.forEach(function(g){
+    g.cores.forEach(function(c){
+      linhas.push([g.peca, g.descricaoBase, c.cor, c.produto, c.descricao, c.qtdeLimpa, c.minutosLimpo,
+        c.segPecaRealLimpo, c.segPecaPadrao, g.referencia, g.baseReferencia,
+        c.desvioReferencia === null ? null : c.desvioReferencia * 100, c.aderenciaLimpo, c.padraoSugerido, c.impactoHoras,
+        c.padraoInstavel ? 'Padrão instável no próprio item' : c.padraoForaDaFaixa ? 'Padrão a corrigir' :
+        c.padraoIndisponivel ? 'Padrão indisponível' : 'Padrão aderente']);
+    });
+  });
+  if(!linhas.length){ alert('Não há peças para exportar.'); return; }
+  baixarCSV('patrimar-peca-x-cor.csv', cab, linhas);
+}
+
+/* ------------------------------------------------------------
+   PAINÉIS
+   ------------------------------------------------------------ */
+function kpi(rot, val, sub, classe, destaque){
+  return '<div class="kpi' + (destaque ? ' destaque' : '') + '"><div class="rot">' + esc(rot) + '</div>' +
+    '<div class="val ' + (classe || '') + '">' + val + '</div>' +
+    (sub ? '<div class="sub">' + sub + '</div>' : '') + '</div>';
+}
+
+function renderImportar(m){
+  var d = m.diagnostico, c = m.conferencia;
+  $('#bloco-leitura').hidden = false;
+  $('#leitura-layout').textContent = 'Layout detectado: ' + (d.layout || '—') +
+    (d.periodoDe ? ' · período ' + d.periodoDe + (d.periodoAte && d.periodoAte !== d.periodoDe ? ' a ' + d.periodoAte : '') : '') +
+    (d.emissaoData ? ' · emitido em ' + d.emissaoData + ' ' + (d.emissaoHora || '') : '');
+
+  $('#leitura-kpis').innerHTML =
+    kpi('Linhas no texto', fmt(d.linhasTotais, 0)) +
+    kpi('Linhas de dados lidas', fmt(d.lidas, 0), 'viraram apontamento', 'ok') +
+    kpi('Cabeçalhos de bloco', fmt(d.estrutura, 0), 'PRODUTO, descrição, máquina, funcionário') +
+    kpi('Totalizadores do ERP', fmt(d.totalizadores, 0), 'capturados para conferência') +
+    kpi('Cabeçalho, lixo e vazias', fmt(d.ruido + d.vazias, 0), 'descartadas por regra conhecida') +
+    kpi('Linhas com falha', fmt(d.falhas.length, 0), d.falhas.length ? 'listadas abaixo, nenhuma sumiu' : 'nenhuma', d.falhas.length ? 'critico' : 'ok') +
+    kpi('Ordens distintas', fmt(m.ordens.length, 0), m.resumo.ofsPartidas ? fmt(m.resumo.ofsPartidas, 0) + ' partida(s) entre datas' : 'nenhuma partida') +
+    kpi('Produtos distintos', fmt(m.produtos.length, 0), fmt(m.pecas.length, 0) + ' peça(s) física(s)');
+
+  var classificadas = d.lidas + d.estrutura + d.totalizadores + d.ruido + d.vazias + d.falhas.length;
+  var contaFecha = classificadas === d.linhasTotais;
+  $('#leitura-conta').innerHTML = '<b>' + fmt(d.linhasTotais, 0) + ' linhas no texto</b> = ' +
+    fmt(d.lidas, 0) + ' apontamentos + ' + fmt(d.estrutura, 0) + ' cabeçalhos de bloco + ' +
+    fmt(d.totalizadores, 0) + ' totalizadores + ' + fmt(d.ruido + d.vazias, 0) + ' descartadas + ' +
+    fmt(d.falhas.length, 0) + ' com falha' +
+    (contaFecha ? ' — a conta fecha, toda linha do arquivo foi classificada.'
+                : ' = ' + fmt(classificadas, 0) + '. <b>A conta não fecha</b>: ' + fmt(d.linhasTotais - classificadas, 0) +
+                  ' linha(s) sem classificação. Reporte este relatório para ajuste do parser.');
+
+  $('#leitura-falhas').innerHTML = d.falhas.length
+    ? '<details class="falhas" open><summary>' + d.falhas.length + ' linha(s) não lida(s) — nenhuma foi descartada em silêncio</summary><pre>' +
+      d.falhas.map(function(f){ return 'linha ' + f.linha + ' — ' + f.motivo + '\n  ' + f.texto; }).join('\n\n') + '</pre></details>'
+    : '<div class="alerta alerta-ok"><span class="ico">✓</span><div class="txt"><h4>Nenhuma linha ficou de fora</h4>' +
+      '<p>Todas as linhas do texto foram classificadas como dado, cabeçalho, totalizador ou lixo conhecido.</p></div></div>';
+
+  var linhasConf = [
+    {apuracao:'Soma das linhas', origem:'apurada pelo app, linha a linha', horas:c.somaLinhas, dif:null, perc:null, divergente:false},
+    {apuracao:'Soma dos subtotais por produto', origem:'"Total de horas" impresso pelo relatório', horas:c.somaSubtotais,
+     dif:c.linhasVsSubtotais ? c.linhasVsSubtotais.dif : null, perc:c.linhasVsSubtotais ? c.linhasVsSubtotais.perc : null,
+     divergente:!!(c.linhasVsSubtotais && c.linhasVsSubtotais.divergente)},
+    {apuracao:'Total geral do rodapé', origem:'"Total geral de horas" impresso pelo relatório', horas:c.rodape,
+     dif:c.subtotaisVsRodape ? c.subtotaisVsRodape.dif : null, perc:c.subtotaisVsRodape ? c.subtotaisVsRodape.perc : null,
+     divergente:!!(c.subtotaisVsRodape && c.subtotaisVsRodape.divergente)}
+  ].filter(function(l){ return l.horas !== null && l.horas !== undefined; });
+  dadosTabela('conferencia', linhasConf); renderTabela('conferencia');
+
+  var alertasConf = [];
+  if(c.linhasVsRodape && c.linhasVsRodape.divergente)
+    alertasConf.push({sev:'atencao', titulo:'O relatório não fecha com ele mesmo',
+      texto:'Da soma das linhas (' + fmt(c.somaLinhas, 6) + ' h) até o rodapé (' + fmt(c.rodape, 6) + ' h) há ' +
+        fmt(c.linhasVsRodape.dif, 6) + ' h de diferença — ' + pct(c.linhasVsRodape.perc, 2) +
+        '. Todos os indicadores deste app usam a soma das linhas, que é a única apuração verificável.',
+      acao:'Trate o rodapé como referência, não como verdade.'});
+  $('#conferencia-alertas').innerHTML = alertasConf.map(blocoAlerta).join('');
+
+  dadosTabela('subtotais', c.porProduto); renderTabela('subtotais');
+}
+
+function renderResumo(m){
+  var r = m.resumo;
+  var alertas = montarAlertas(m);
+  $('#resumo-alertas').innerHTML = alertas.map(blocoAlerta).join('');
+  var criticos = alertas.filter(function(a){ return a.sev === 'critico'; }).length;
+  $('#resumo-qtd-alertas').textContent = alertas.filter(function(a){ return a.sev !== 'ok'; }).length +
+    ' ocorrência(s), ' + criticos + ' crítica(s)';
+  var badge = $('#cont-alertas');
+  var n = alertas.filter(function(a){ return a.sev !== 'ok'; }).length;
+  badge.hidden = !n; badge.textContent = n; badge.className = 'contador' + (criticos ? ' alerta' : '');
+
+  $('#resumo-escopo').textContent = fmt(r.ofsValidas, 0) + ' de ' + fmt(r.ofsTotal, 0) +
+    ' OFs entram nos cálculos · ' + fmt(r.produtosDistintos, 0) + ' produtos · ' + fmt(m.maquinas.length, 0) + ' máquina(s)';
+
+  $('#resumo-kpis').innerHTML =
+    kpi('Peças produzidas', fmt(r.pecas, 0), 'somente OFs válidas') +
+    kpi('Horas reais apontadas', fmt(r.horasReais, 2), minutosParaHHMM(r.minutosReais) + ' de relógio') +
+    kpi('Horas padrão (ERP)', fmt(r.horasPadrao, 4), 'quantidade × tempo padrão') +
+    kpi('Aderência global', pct(r.aderencia), 'padrão ÷ real', classeAderencia(r.aderencia), true) +
+    kpi('Tempo sem OF', fmt(r.semOF, 0) + ' min', pct(r.percSemOF) + ' da janela de ' + fmt(r.janela, 0) + ' min',
+        r.percSemOF > 10 ? 'atencao' : '') +
+    kpi('OFs pendentes', fmt(r.ofsPendentes, 0), resumoPendencias(r),
+        r.ofsPendentes ? 'critico' : 'ok') +
+    kpi('OFs com anomalia', fmt(r.ofsAnomalas, 0), resumoAnomalias(r) || 'de ' + fmt(r.ofsValidas, 0) + ' válidas',
+        r.ofsAnomalas ? 'atencao' : 'ok') +
+    kpi('OFs partidas', fmt(r.ofsPartidas, 0), 'agregadas pela OF, não pela data') +
+    kpi('Peças com padrão divergente', fmt(r.pecasDivergentes, 0), 'cores da mesma peça', r.pecasDivergentes ? 'critico' : 'ok') +
+    kpi('Itens com padrão instável', fmt(r.produtosPadraoInstavel, 0), 'entre as próprias OFs', r.produtosPadraoInstavel ? 'critico' : 'ok') +
+    kpi('Divergência de totais', c3(m), 'linhas × subtotais × rodapé', (m.conferencia.linhasVsRodape && m.conferencia.linhasVsRodape.divergente) ? 'atencao' : 'ok');
+
+  dadosTabela('tempo', m.turnos); renderTabela('tempo');
+}
+var ROTULO_ANOMALIA = {
+  'padrao-divergente':'padrão entre cores', 'padrao-inconsistente':'padrão entre OFs',
+  'padrao-implausivel':'padrão implausível', 'parada-embutida':'parada embutida',
+  'sequencia-colada':'sequência colada', 'ritmo-implausivel':'ritmo implausível'
+};
+function resumoAnomalias(r){
+  var t = r.porTipoAnomalia || {};
+  return Object.keys(t).map(function(k){ return t[k] + ' ' + (ROTULO_ANOMALIA[k] || k); }).join(' · ');
+}
+function plural(n, sing, plur){ return fmt(n, 0) + ' ' + (n === 1 ? sing : plur); }
+function resumoPendencias(r){
+  var p = [];
+  if(r.ofsAbertas)      p.push(plural(r.ofsAbertas, 'aberta', 'abertas'));
+  if(r.ofsIncompletas)  p.push(plural(r.ofsIncompletas, 'partida incompleta', 'partidas incompletas'));
+  if(r.ofsDuracaoZero)  p.push(plural(r.ofsDuracaoZero, 'de duração zero', 'de duração zero'));
+  if(r.ofsHoraInvalida) p.push(plural(r.ofsHoraInvalida, 'com hora inválida', 'com hora inválida'));
+  if(r.ofsViradaDia)    p.push(plural(r.ofsViradaDia, 'com fim antes do início', 'com fim antes do início'));
+  return p.join(' · ') || 'nenhuma';
+}
+function c3(m){
+  var c = m.conferencia;
+  if(c.rodape === null || c.rodape === undefined) return fmt(c.somaLinhas, 2);
+  return fmt(c.somaLinhas, 2) + ' / ' + (c.somaSubtotais === null ? '—' : fmt(c.somaSubtotais, 2)) + ' / ' + fmt(c.rodape, 2);
+}
+
+function renderRecursos(m){
+  dadosTabela('maquinas', m.maquinas); renderTabela('maquinas');
+  dadosTabela('funcionarios', m.funcionarios); renderTabela('funcionarios');
+  var lac = [];
+  m.turnos.forEach(function(t){
+    t.lacunas.forEach(function(l){
+      lac.push({data:t.data, maquina:t.maquina, funcionario:t.funcionario, funcionarioNome:t.funcionarioNome,
+                deMin:l.deMin, ateMin:l.ateMin, min:l.min, antes:l.antes, depois:l.depois});
+    });
+  });
+  dadosTabela('lacunas', lac); renderTabela('lacunas');
+
+  var maq = m.maquinas[0];
+  var faixa = (maq && maq.ritmoMin !== null && maq.ritmoMin > 0)
+    ? ' No período importado, ' + esc(maq.chave) + ' variou de <b>' + fmt(maq.ritmoMin, 2) + '</b> a <b>' + fmt(maq.ritmoMax, 2) +
+      ' pç/min</b> conforme o produto — ' + fmt(maq.ritmoMax / maq.ritmoMin, 1) + '× de diferença.'
+    : '';
+  $('#aviso-agregado').innerHTML = '<b>▲ O ritmo agregado não serve para programação.</b> Ele é média ponderada de produtos com ciclos ' +
+    'diferentes: muda a cada mix, sem que nada tenha mudado na máquina.' + faixa +
+    ' Para carga-máquina e sequenciamento, use sempre o ritmo por produto da aba <b>Por produto</b>.';
+}
+
+function renderTudo(m){
+  ESTADO.modelo = m;
+  enriquecerPendencias(m);
+  renderImportar(m);
+  renderResumo(m);
+  dadosTabela('produtos', m.produtos); renderTabela('produtos');
+  renderPecas(m);
+  dadosTabela('ordens', m.ordens); renderTabela('ordens');
+  dadosTabela('pendencias', m.ordens.filter(function(o){ return o.pendente; })); renderTabela('pendencias');
+  renderRecursos(m);
+
+  var pend = $('#cont-pend'), np = m.resumo.ofsPendentes;
+  pend.hidden = !np; pend.textContent = np; pend.className = 'contador' + (np ? ' alerta' : '');
+  var cp = $('#cont-peca'), nd = m.resumo.pecasDivergentes;
+  cp.hidden = !nd; cp.textContent = nd; cp.className = 'contador' + (nd ? ' alerta' : '');
+
+  $$('.abas button').forEach(function(b){ b.disabled = false; });
+
+  var d = m.diagnostico;
+  $('#topo-meta').innerHTML = 'Período <b>' + esc(d.periodoDe || '—') +
+    (d.periodoAte && d.periodoAte !== d.periodoDe ? ' a ' + esc(d.periodoAte) : '') + '</b> · ' +
+    '<b>' + fmt(d.lidas, 0) + '</b> apontamentos · <b>' + fmt(m.ordens.length, 0) + '</b> OFs · ' +
+    '<b>' + fmt(m.resumo.pecas, 0) + '</b> peças · aderência <b>' + pct(m.resumo.aderencia) + '</b>';
+
+  $('#pendencias-alertas').innerHTML = m.resumo.ofsPendentes
+    ? montarAlertas(m).filter(function(a){ return /pendencias/.test(a.ir || ''); }).map(blocoAlerta).join('')
+    : '<div class="alerta alerta-ok"><span class="ico">✓</span><div class="txt"><h4>Nenhuma pendência de apontamento</h4>' +
+      '<p>Todas as ordens do período estão fechadas, com quantidade apontada e horário consistente.</p></div></div>';
+}
+
+/* ------------------------------------------------------------
+   NAVEGAÇÃO E EVENTOS
+   ------------------------------------------------------------ */
+function irPara(aba){
+  $$('.abas button').forEach(function(b){ b.setAttribute('aria-selected', String(b.dataset.aba === aba)); });
+  $$('.painel').forEach(function(p){ p.hidden = (p.id !== 'aba-' + aba); });
+  window.scrollTo({top:0, behavior:'smooth'});
+}
+
+function processar(texto){
+  var alvo = $('#erro-entrada');
+  if(!texto || !texto.trim()){
+    alvo.innerHTML = blocoAlerta({sev:'atencao', titulo:'Nada para processar',
+      texto:'Cole o texto do relatório ou carregue um arquivo .txt/.csv exportado do ERP.', acao:null});
+    return;
+  }
+  try{
+    var saida = parsearRelatorio(texto);
+    if(!saida.registros.length){
+      alvo.innerHTML = blocoAlerta({sev:'critico', titulo:'Nenhuma linha de apontamento reconhecida',
+        texto:'O texto foi lido, mas nenhuma linha tinha o formato esperado (número da OF, quantidade, data dd/mm/aa, máquina, funcionário, HR.INICIO, HR.FIM, fase, horas). Foram ' +
+          saida.diagnostico.falhas.length + ' linha(s) com falha de leitura.',
+        acao:'Confira se o texto colado é o REL. PLANILHAMENTO POR PRODUTO ou POR FUNCIONÁRIO completo.'});
+      $('#bloco-leitura').hidden = true;
+      return;
+    }
+    alvo.innerHTML = '';
+    renderTudo(construirModelo(saida.registros, saida.diagnostico));
+    irPara('resumo');
+  }catch(e){
+    alvo.innerHTML = blocoAlerta({sev:'critico', titulo:'Erro ao processar o relatório',
+      texto:String(e && e.message ? e.message : e), acao:'Envie o trecho do relatório que causou o erro para ajuste do parser.'});
+  }
+}
+
+function ligarEventos(){
+  $$('.abas button').forEach(function(b){
+    b.addEventListener('click', function(){ if(!b.disabled) irPara(b.dataset.aba); });
+  });
+  document.addEventListener('click', function(ev){
+    var alvo = ev.target.closest ? ev.target.closest('[data-ir]') : null;
+    if(alvo){ irPara(alvo.getAttribute('data-ir')); return; }
+    var exp = ev.target.closest ? ev.target.closest('[data-exportar]') : null;
+    if(exp){
+      var chave = exp.getAttribute('data-exportar');
+      if(chave === 'pecas'){ if(ESTADO.modelo) exportarPecas(ESTADO.modelo); return; }
+      exportarTabela(chave, 'patrimar-' + chave + '.csv');
+    }
+  });
+
+  $('#btn-processar').addEventListener('click', function(){ processar($('#entrada').value); });
+  $('#btn-exemplo').addEventListener('click', function(){ $('#entrada').value = RELATORIO_EXEMPLO; processar(RELATORIO_EXEMPLO); });
+  $('#btn-limpar').addEventListener('click', function(){
+    $('#entrada').value = ''; $('#erro-entrada').innerHTML = ''; $('#bloco-leitura').hidden = true;
+    $('#arquivo').value = '';
+  });
+
+  $('#arquivo').addEventListener('change', function(ev){
+    var f = ev.target.files && ev.target.files[0];
+    if(!f) return;
+    var fr = new FileReader();
+    fr.onload = function(){
+      var buf = fr.result, txt;
+      try{
+        txt = new TextDecoder('utf-8').decode(buf);
+        if(txt.indexOf('�') > -1) txt = new TextDecoder('windows-1252').decode(buf);
+      }catch(e){ txt = String(buf); }
+      $('#entrada').value = txt;
+      processar(txt);
+    };
+    fr.onerror = function(){
+      $('#erro-entrada').innerHTML = blocoAlerta({sev:'critico', titulo:'Não foi possível ler o arquivo',
+        texto:'O navegador recusou a leitura. Abra o arquivo em um editor de texto e cole o conteúdo no campo acima.', acao:null});
+    };
+    fr.readAsArrayBuffer(f);
+  });
+
+  var busca = $('#busca-ordens');
+  busca.addEventListener('input', function(){
+    TABELAS.ordens.cfg.termo = busca.value;
+    renderTabela('ordens');
+  });
+
+  var filtros = [
+    {ch:'todas', tit:'Todas'}, {ch:'anomalas', tit:'Com anomalia'}, {ch:'pendentes', tit:'Pendentes'},
+    {ch:'partidas', tit:'Partidas'}, {ch:'limpas', tit:'Sem ocorrência'}
+  ];
+  $('#filtros-ordens').innerHTML = filtros.map(function(f){
+    return '<button class="chip" data-filtro="' + f.ch + '" aria-pressed="' + (f.ch === 'todas') + '">' + f.tit + '</button>';
+  }).join('');
+  $('#filtros-ordens').addEventListener('click', function(ev){
+    var b = ev.target.closest ? ev.target.closest('[data-filtro]') : null;
+    if(!b) return;
+    ESTADO.filtroOrdens = b.getAttribute('data-filtro');
+    $$('#filtros-ordens .chip').forEach(function(x){ x.setAttribute('aria-pressed', String(x === b)); });
+    renderTabela('ordens');
+  });
+}
+
+/* ------------------------------------------------------------
+   DADOS DE EXEMPLO — trecho real de 19/08/26, máquina FUR16
+   ------------------------------------------------------------ */
+var RELATORIO_EXEMPLO = [
+'PATRIMAR MOVEIS LTDA                                        Data:      20/08/26',
+'CNPJ:    02.948.278/0001-10     INS.EST.   393001450118      Hora:      10:42:46',
+'                                                             Página:    1',
+'Produção            REL. PLANILHAMENTO POR PRODUTO           Lógica',
+'Período de :  19/08/26   Até :  19/08/26                     Fase :  55',
+'PRODUTO : 497.003.073',
+'ESCRIV PRISM BASE 500X440X15 MDP 3 CUMARU',
+'801458 ; 75,0000 ; 75,0000 ; 19/08/26 ; FUR16 ;FURADEIRA F601 6545 CNC XZ ; 893 ;MAURICIO CARLOS FERREIRA ; 8,53 ; 9,00 ; 55 ; 0,067881 ; 0,00',
+';;;;;;;; Total de horas : ;;; 0,067881',
+'PRODUTO : 497.003.116',
+'ESCRIV PRISM BASE 500X440X15 MDP 3 CINAMOMO',
+'801459 ; 375,0000 ; 375,0000 ; 19/08/26 ; FUR16 ;FURADEIRA F601 6545 CNC XZ ; 893 ;MAURICIO CARLOS FERREIRA ; 9,00 ; 9,34 ; 55 ; 0,339404 ; 0,00',
+'801510 ; 3,0000 ; 3,0000 ; 19/08/26 ; FUR16 ;FURADEIRA F601 6545 CNC XZ ; 893 ;MAURICIO CARLOS FERREIRA ; 9,34 ; 9,34 ; 55 ; 0,002715 ; 0,00',
+';;;;;;;; Total de horas : ;;; 0,342119',
+'PRODUTO : 794.001.006',
+'RACK JOAQUIM TAMPO 1500X336X15 MDP 1 OFF WHITE',
+'801403 ; 310,0000 ; 310,0000 ; 19/08/26 ; FUR16 ;FURADEIRA F601 6545 CNC XZ ; 893 ;MAURICIO CARLOS FERREIRA ; 14,13 ; 16,16 ; 55 ; 2,032250 ; 0,00',
+';;;;;;;; Total de horas : ;;; 2,032250',
+'PRODUTO : 794.001.116',
+'RACK JOAQUIM TAMPO 1500X336X15 MDP 1 CINAMOMO',
+'801404 ; 90,0000 ; 90,0000 ; 19/08/26 ; FUR16 ;FURADEIRA F601 6545 CNC XZ ; 893 ;MAURICIO CARLOS FERREIRA ; 16,16 ; 16,52 ; 55 ; 0,357750 ; 0,00',
+'801405 ; 90,0000 ; 0,0000 ; 19/08/26 ; FUR16 ;FURADEIRA F601 6545 CNC XZ ; 893 ;MAURICIO CARLOS FERREIRA ; 16,52 ; 17,00 ; 55 ; 0,080000 ; 0,00',
+';;;;;;;; Total de horas : ;;; 0,437750',
+'PRODUTO : 794.003.070',
+'RACK JOAQUIM BASE CENTRAL 1500X336X15 MDP 3 PTO AC',
+'801412 ; 90,0000 ; 90,0000 ; 19/08/26 ; FUR16 ;FURADEIRA F601 6545 CNC XZ ; 893 ;MAURICIO CARLOS FERREIRA ; 10,05 ; 10,24 ; 55 ; 0,189000 ; 0,00',
+'801413 ; 90,0000 ; 90,0000 ; 19/08/26 ; FUR16 ;FURADEIRA F601 6545 CNC XZ ; 893 ;MAURICIO CARLOS FERREIRA ; 10,24 ; 10,43 ; 55 ; 0,189000 ; 0,00',
+'801414 ; 90,0000 ; 90,0000 ; 19/08/26 ; FUR16 ;FURADEIRA F601 6545 CNC XZ ; 893 ;MAURICIO CARLOS FERREIRA ; 10,43 ; 12,14 ; 55 ; 0,189000 ; 0,00',
+'801415 ; 90,0000 ; 90,0000 ; 19/08/26 ; FUR16 ;FURADEIRA F601 6545 CNC XZ ; 893 ;MAURICIO CARLOS FERREIRA ; 12,14 ; 12,33 ; 55 ; 0,189000 ; 0,00',
+'801416 ; 80,0000 ; 80,0000 ; 19/08/26 ; FUR16 ;FURADEIRA F601 6545 CNC XZ ; 893 ;MAURICIO CARLOS FERREIRA ; 12,33 ; 12,49 ; 55 ; 0,168000 ; 0,00',
+';;;;;;;; Total de horas : ;;; 1,324000',
+'PRODUTO : 794.003.116',
+'RACK JOAQUIM BASE CENTRAL 1500X336X15 MDP 3 CINAMO',
+'801417 ; 90,0000 ; 90,0000 ; 19/08/26 ; FUR16 ;FURADEIRA F601 6545 CNC XZ ; 893 ;MAURICIO CARLOS FERREIRA ; 12,49 ; 13,08 ; 55 ; 0,189000 ; 0,00',
+'801418 ; 90,0000 ; 90,0000 ; 19/08/26 ; FUR16 ;FURADEIRA F601 6545 CNC XZ ; 893 ;MAURICIO CARLOS FERREIRA ; 13,08 ; 13,27 ; 55 ; 0,189000 ; 0,00',
+'801419 ; 90,0000 ; 90,0000 ; 19/08/26 ; FUR16 ;FURADEIRA F601 6545 CNC XZ ; 893 ;MAURICIO CARLOS FERREIRA ; 13,27 ; 13,46 ; 55 ; 0,189000 ; 0,00',
+'801420 ; 90,0000 ; 90,0000 ; 19/08/26 ; FUR16 ;FURADEIRA F601 6545 CNC XZ ; 893 ;MAURICIO CARLOS FERREIRA ; 13,46 ; 14,05 ; 55 ; 0,189000 ; 0,00',
+';;;;;;;; Total de horas : ;;; 1,156000',
+'PRODUTO : 803.001.006',
+'MADERO BASE 451X351X12 MDP 1 OFF WHITE',
+'801188 ; 500,0000 ; 500,0000 ; 19/08/26 ; FUR16 ;FURADEIRA F601 6545 CNC XZ ; 893 ;MAURICIO CARLOS FERREIRA ; 5,00 ; 5,06 ; 55 ; 0,057879 ; 0,00',
+'801189 ; 500,0000 ; 500,0000 ; 19/08/26 ; FUR16 ;FURADEIRA F601 6545 CNC XZ ; 893 ;MAURICIO CARLOS FERREIRA ; 5,06 ; 6,51 ; 55 ; 1,448485 ; 0,00',
+'801190 ; 200,0000 ; 200,0000 ; 19/08/26 ; FUR16 ;FURADEIRA F601 6545 CNC XZ ; 893 ;MAURICIO CARLOS FERREIRA ; 6,51 ; 7,34 ; 55 ; 0,419394 ; 0,00',
+';;;;;;;; Total de horas : ;;; 2,325758',
+'PRODUTO : 803.001.070',
+'MADERO BASE 451X351X12 MDP 1 PTO AC',
+'801191 ; 200,0000 ; 200,0000 ; 19/08/26 ; FUR16 ;FURADEIRA F601 6545 CNC XZ ; 893 ;MAURICIO CARLOS FERREIRA ; 7,34 ; 8,16 ; 55 ; 0,419394 ; 0,00',
+';;;;;;;; Total de horas : ;;; 0,419394',
+'PRODUTO : 803.001.108',
+'MADERO BASE 451X351X12 MDP 1 GRAFITE',
+'801192 ; 50,0000 ; 50,0000 ; 19/08/26 ; FUR16 ;FURADEIRA F601 6545 CNC XZ ; 893 ;MAURICIO CARLOS FERREIRA ; 8,16 ; 8,26 ; 55 ; 0,104848 ; 0,00',
+';;;;;;;; Total de horas : ;;; 0,104848',
+';;;;;;;; Total geral de horas : ;;; 9,410000'
+].join('\n');
+
+/* ------------------------------------------------------------
+   BOOT
+   ------------------------------------------------------------ */
+definirTodasAsTabelas();
+ligarEventos();
+irPara('importar');
+</script>
+</body>
+</html>
