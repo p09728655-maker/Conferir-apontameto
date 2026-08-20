@@ -159,6 +159,21 @@ ok('nenhuma OF descartada do ritmo', pr070.ofsDescartadasRitmo === 0, String(pr0
 const maq = m.maquinas[0];
 ok('faixa de ritmo por produto exposta', maq.ritmoMin !== null && maq.ritmoMax !== null && maq.ritmoMax > maq.ritmoMin);
 
+console.log('\n== hora cheia sem minutos e coluna FS vazia ==');
+const HC = readFileSync(join(raiz, 'testes', 'amostra-hora-cheia.txt'), 'utf8');
+const hc = api.parsearRelatorio(HC);
+ok('4 linhas lidas, nenhuma falha', hc.diagnostico.lidas === 4 && hc.diagnostico.falhas.length === 0,
+   'lidas=' + hc.diagnostico.lidas + ' falhas=' + JSON.stringify(hc.diagnostico.falhas.map(f => f.motivo)));
+const h188 = hc.registros.find(r => r.ordem === '801188');
+ok('"5" lido como 5h00', h188.horaInicioMin === 300, String(h188.horaInicioMin));
+ok('"5,06" lido como 5h06', h188.horaFimMin === 306);
+const h458 = hc.registros.find(r => r.ordem === '801458');
+ok('"9" no HR.FIM lido como 9h00', h458.horaFimMin === 540, String(h458.horaFimMin));
+ok('coluna FS vazia nao atrapalha HORAS', perto(h458.horasPadrao, 0.067881, 1e-9), String(h458.horasPadrao));
+ok('fase ausente vira null, nao erro', h458.fase === null);
+ok('linha com fase preenchida continua certa', hc.registros.find(r => r.ordem === '801403').fase === '55');
+ok('quantidade sem casas decimais lida', h188.qtdeProduzida === 500 && h188.qtdeOrdem === 500);
+
 console.log('\n== layout POR FUNCIONARIO (colunas alternativas) ==');
 const alt = [
   'FUNCIONARIO : 893 ; MAURICIO CARLOS FERREIRA',

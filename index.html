@@ -680,7 +680,8 @@ function minutosParaHHMM(min){
 var RE_COD_PRODUTO  = /^\d{3}\.\d{3}\.\d{3}$/;
 var RE_DATA_CAMPO   = /^\d{2}\/\d{2}\/\d{2,4}$/;
 var RE_DATA_QUALQUER= /\d{2}\/\d{2}\/\d{2,4}/;
-var RE_HHMM         = /^\d{1,2}[.,]\d{1,2}$/;
+/* hora cheia vem sem os minutos neste ERP: "9" é 9h00, "9,34" é 9h34 */
+var RE_HHMM         = /^\d{1,2}([.,]\d{1,2})?$/;
 var RE_NUMERICO     = /^[\d.,]+$/;
 
 /* Linha de dados livre (colagem de PDF, sem ";"). O nome do funcionário
