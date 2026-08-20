@@ -207,6 +207,8 @@ table.tab tbody tr:hover{background:var(--patrimar-areia)}
 table.tab td.n, table.tab th.n{text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap}
 table.tab td.c, table.tab th.c{text-align:center}
 table.tab td.forte{font-weight:700}
+table.tab td .grande{font-size:18px; font-weight:700; line-height:1.1}
+table.tab td .grande-sub{font-size:12px; color:var(--tinta-2); font-weight:400}
 table.tab .obs{display:block; font-size:12px; color:var(--tinta-2); margin-top:2px; white-space:normal; max-width:52ch}
 table.tab tr.linha-extra td{
   border-bottom:2px solid var(--linha); background:var(--papel-2);
@@ -364,6 +366,18 @@ details.falhas pre{
 
   <!-- ===================== ABA 2 — RESUMO ===================== -->
   <section class="painel" id="aba-resumo" role="tabpanel" aria-labelledby="tab-resumo" hidden>
+    <div class="cartao">
+      <header>
+        <h2>Ritmo real medido &mdash; peças por minuto</h2>
+        <button class="btn btn-mini" data-exportar="ritmo">Exportar CSV</button>
+      </header>
+      <div class="corpo sem-padding">
+        <div class="rolagem" id="tab-ritmo"></div>
+        <div class="explica">Medido pelo relógio: <b>quantidade produzida ÷ (HR.FIM &minus; HR.INICIO)</b>, nunca pela coluna HORAS do ERP.
+        O número em destaque já exclui as OFs com parada embutida ou ritmo implausível — é o ritmo que a máquina sustenta quando a ordem corre normal,
+        o que serve para carga-máquina e sequenciamento. O valor entre parênteses é o mesmo cálculo sem excluir nada.</div>
+      </div>
+    </div>
     <div class="cartao">
       <header><h2>O que exige ação</h2><span class="contagem" id="resumo-qtd-alertas"></span></header>
       <div class="corpo" id="resumo-alertas"></div>
@@ -1673,6 +1687,44 @@ function definirTodasAsTabelas(){
     }
   });
 
+  definirTabela('ritmo', {
+    alvo:'#tab-ritmo', vazio:'Nenhum produto com OF válida para medir ritmo.', ordemInicial:'pecasPorMinutoLimpo',
+    colunas:[
+      {ch:'produto', tit:'Produto', val:function(l){ return l.produto; }, cls:'mono', larg:98},
+      {ch:'descricao', tit:'Descrição', val:function(l){ return l.descricao || ''; }, cls:'desc', larg:230},
+      {ch:'pecasPorMinutoLimpo', tit:'Peças por minuto', tipo:'num', dec:2, val:function(l){ return l.pecasPorMinutoLimpo; },
+       html:function(l){
+         return '<span class="grande">' + fmt(l.pecasPorMinutoLimpo, 2) + '</span>' +
+           (l.ofsDescartadasRitmo ? '<span class="grande-sub"> (' + fmt(l.pecasPorMinuto, 2) + ' com anômalas)</span>' : '');
+       }},
+      {ch:'pecasPorHoraLimpo', tit:'Peças por hora', tipo:'num', dec:0, val:function(l){ return l.pecasPorHoraLimpo; },
+       html:function(l){ return '<span class="grande">' + fmt(l.pecasPorHoraLimpo, 0) + '</span>'; }},
+      {ch:'segPecaRealLimpo', tit:'Segundos por peça', tipo:'num', dec:2, val:function(l){ return l.segPecaRealLimpo; }},
+      {ch:'qtdeLimpa', tit:'Peças medidas', tipo:'num', dec:0, val:function(l){ return l.qtdeLimpa; }},
+      {ch:'minutosLimpo', tit:'Min medidos', tipo:'num', dec:0, val:function(l){ return l.minutosLimpo; }},
+      {ch:'qtdeOFsValidas', tit:'OFs na medição', tipo:'num', dec:0, val:function(l){ return l.qtdeOFsValidas - l.ofsDescartadasRitmo; },
+       html:function(l){
+         var n = l.qtdeOFsValidas - l.ofsDescartadasRitmo;
+         return fmt(n, 0) + (l.ofsDescartadasRitmo ? '<span class="obs">' + l.ofsDescartadasRitmo + ' OF anômala fora</span>' : '');
+       }},
+      {ch:'confianca', tit:'Confiança da medição', val:function(l){ return (l.qtdeOFsValidas - l.ofsDescartadasRitmo); },
+       html:function(l){
+         var n = l.qtdeOFsValidas - l.ofsDescartadasRitmo;
+         if(!n) return selo('Sem medição válida', 'critico');
+         if(n === 1) return selo('1 OF só — indicativo', 'atencao') + '<span class="obs">uma única ordem não estabelece ritmo; confirme com mais dias</span>';
+         return selo(n + ' OFs medidas', 'ok');
+       },
+       csv:function(l){ return (l.qtdeOFsValidas - l.ofsDescartadasRitmo) + ' OF(s) na medição'; }}
+    ],
+    totalizador:function(linhas){
+      var q = soma(linhas, function(l){ return l.qtdeLimpa; }), m = soma(linhas, function(l){ return l.minutosLimpo; });
+      return {produto:'Total do período', qtdeLimpa:fmt(q, 0), minutosLimpo:fmt(m, 0),
+              pecasPorMinutoLimpo:m ? '<span class="grande">' + fmt(q / m, 2) + '</span>' : '—',
+              pecasPorHoraLimpo:m ? fmt(q / m * 60, 0) : '—',
+              segPecaRealLimpo:q ? fmt(m * 60 / q, 2) : '—'};
+    }
+  });
+
   definirTabela('ordens', {
     alvo:'#tab-ordens-lista', vazio:'Nenhuma ordem no filtro aplicado', ordemInicial:null,
     busca:function(l){ return l.ordem + ' ' + l.produto + ' ' + l.descricao + ' ' + l.maquina + ' ' + l.funcionarioNome; },
@@ -2169,6 +2221,7 @@ function renderImportar(m){
 
 function renderResumo(m){
   var r = m.resumo;
+  dadosTabela('ritmo', m.produtos.filter(function(p){ return p.qtdeOFsValidas > 0; })); renderTabela('ritmo');
   var alertas = montarAlertas(m);
   $('#resumo-alertas').innerHTML = alertas.map(blocoAlerta).join('');
   var criticos = alertas.filter(function(a){ return a.sev === 'critico'; }).length;
@@ -2268,7 +2321,9 @@ function renderTudo(m){
   $('#topo-meta').innerHTML = 'Período <b>' + esc(d.periodoDe || '—') +
     (d.periodoAte && d.periodoAte !== d.periodoDe ? ' a ' + esc(d.periodoAte) : '') + '</b> · ' +
     '<b>' + fmt(d.lidas, 0) + '</b> apontamentos · <b>' + fmt(m.ordens.length, 0) + '</b> OFs · ' +
-    '<b>' + fmt(m.resumo.pecas, 0) + '</b> peças · aderência <b>' + pct(m.resumo.aderencia) + '</b>';
+    '<b>' + fmt(m.resumo.pecas, 0) + '</b> peças · aderência <b>' + pct(m.resumo.aderencia) + '</b>' +
+    (m.maquinas[0] && m.maquinas[0].ritmoMin !== null
+      ? ' · ritmo <b>' + fmt(m.maquinas[0].ritmoMin, 2) + ' a ' + fmt(m.maquinas[0].ritmoMax, 2) + ' pç/min</b>' : '');
 
   $('#pendencias-alertas').innerHTML = m.resumo.ofsPendentes
     ? montarAlertas(m).filter(function(a){ return /pendencias/.test(a.ir || ''); }).map(blocoAlerta).join('')
