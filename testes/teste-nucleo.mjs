@@ -90,14 +90,17 @@ ok('801404 real 24,00 s/pc', perto(o404.segPecaReal, 24, 0.001));
 ok('801404 padrao 14,31 s/pc', perto(o404.segPecaPadrao, 14.31, 0.001));
 ok('801404 aderencia ~60%', perto(o404.aderencia, 59.63, 0.1), String(o404.aderencia));
 ok('801403 pecas/min = 2,52', perto(o403.pecasPorMinuto, 2.5203, 0.001));
-ok('801414 91 min reais', o414.minutosReais === 91);
+ok('801414 91 min de relogio', o414.minutosBrutos === 91, String(o414.minutosBrutos));
+ok('801414 desconta 72 min de refeicao (11:00 as 12:12)', o414.minutosRefeicao === 72, String(o414.minutosRefeicao));
+ok('801414 sobram 19 min de producao, igual as gemeas', o414.minutosReais === 19, String(o414.minutosReais));
+ok('801414 marcada com o desconto de refeicao', o414.anomalias.some(a => a.tipo === 'refeicao-descontada'));
 
 console.log('\n== anomalias ==');
 const tem = (n, t) => of(n).anomalias.some(a => a.tipo === t);
 ok('#2 801188 padrao implausivel', tem('801188', 'padrao-implausivel'));
 ok('#2 801189 nao sinalizada', !tem('801189', 'padrao-implausivel'));
 ok('#2 801190 nao sinalizada', !tem('801190', 'padrao-implausivel'));
-ok('#3 801414 parada embutida', tem('801414', 'parada-embutida'));
+ok('#3 801414 NAO e mais parada embutida: era o almoco', !tem('801414', 'parada-embutida'));
 ok('#3 801412/13/15 sem parada', !tem('801412','parada-embutida') && !tem('801413','parada-embutida') && !tem('801415','parada-embutida'));
 ok('#1 794.001.116 padrao divergente', tem('801404', 'padrao-divergente'));
 ok('#1 794.001.006 dentro da faixa', !tem('801403', 'padrao-divergente'));
@@ -112,7 +115,7 @@ console.log('\n== #6 ritmo real implausivel ==');
 ok('801188 (500 pc em 6 min) sinalizada', tem('801188', 'ritmo-implausivel'));
 ok('801189 nao sinalizada', !tem('801189', 'ritmo-implausivel'));
 ok('801190 nao sinalizada', !tem('801190', 'ritmo-implausivel'));
-ok('801414 continua como parada embutida, nao ritmo', tem('801414','parada-embutida') && !tem('801414','ritmo-implausivel'));
+ok('801414 sem anomalia de ritmo apos o desconto', !tem('801414','parada-embutida') && !tem('801414','ritmo-implausivel'));
 const p803real = m.produtos.find(p => p.produto === '803.001.006');
 ok('803.001.006 real com anomalas 7,70 s/pc', perto(p803real.segPecaReal, 7.7, 0.01), String(p803real.segPecaReal));
 ok('803.001.006 real limpo 12,69 s/pc', perto(p803real.segPecaRealLimpo, 148*60/700, 1e-9), String(p803real.segPecaRealLimpo));
@@ -122,7 +125,7 @@ const p794001 = m.pecas.find(p => p.peca === '794.001');
 ok('794.001 marcada divergente', p794001.divergente === true);
 ok('794.001 referencia ~23,9 s/pc', perto(p794001.referencia, 23.903, 0.01), String(p794001.referencia));
 const p794003 = m.pecas.find(p => p.peca === '794.003');
-ok('794.003 referencia usa ritmo limpo (~12,6 s/pc)', perto(p794003.referencia, (73*60/350 + 76*60/360)/2, 1e-9), String(p794003.referencia));
+ok('794.003 referencia usa ritmo real', perto(p794003.referencia, (92*60/440 + 76*60/360)/2, 1e-9), String(p794003.referencia));
 ok('794.003 referencia nao contaminada pela parada embutida', p794003.referencia < 13);
 const p803peca = m.pecas.find(p => p.peca === '803.001');
 ok('803.001 referencia usa ritmo limpo (~12,6 s/pc)', p803peca.referencia > 12 && p803peca.referencia < 13, String(p803peca.referencia));
@@ -140,17 +143,19 @@ ok('803.001 compara apenas .070 e .108', m.pecas.find(p => p.peca === '803.001')
 
 console.log('\n== turno e tempo sem OF ==');
 ok('1 turno (1 maquina, 1 operador, 1 dia)', m.turnos.length === 1, 'n=' + m.turnos.length);
-ok('janela de 720 min', m.turnos[0].janela === 720, String(m.turnos[0].janela));
-ok('654 min apontados', m.turnos[0].coberto === 654, String(m.turnos[0].coberto));
+ok('janela bruta de 720 min (5:00 as 17:00)', m.turnos[0].janelaBruta === 720, String(m.turnos[0].janelaBruta));
+ok('72 min de refeicao fora da janela', m.turnos[0].refeicao === 72, String(m.turnos[0].refeicao));
+ok('janela util de 648 min', m.turnos[0].janela === 648, String(m.turnos[0].janela));
+ok('582 min apontados (654 de relogio - 72 de almoco)', m.turnos[0].coberto === 582, String(m.turnos[0].coberto));
 ok('66 min sem OF', m.turnos[0].semOF === 66, String(m.turnos[0].semOF));
 ok('3 lacunas', m.turnos[0].lacunas.length === 3, 'n=' + m.turnos[0].lacunas.length);
 ok('sem sobreposicao de apontamento', m.turnos[0].sobreposicao === 0);
 
 console.log('\n== ritmo com e sem anomalas ==');
 const pr070 = m.produtos.find(p => p.produto === '794.003.070');
-ok('794.003.070 ritmo com anomalas = 440/164 pc/min', perto(pr070.pecasPorMinuto, 440/164, 1e-9), String(pr070.pecasPorMinuto));
-ok('794.003.070 ritmo sem anomalas = 350/73 pc/min', perto(pr070.pecasPorMinutoLimpo, 350/73, 1e-9), String(pr070.pecasPorMinutoLimpo));
-ok('1 OF descartada do ritmo limpo', pr070.ofsDescartadasRitmo === 1);
+ok('794.003.070 ritmo = 440/92 pc/min', perto(pr070.pecasPorMinuto, 440/92, 1e-9), String(pr070.pecasPorMinuto));
+ok('794.003.070 bruto e limpo coincidem: nao ha mais anomala', perto(pr070.pecasPorMinutoLimpo, 440/92, 1e-9), String(pr070.pecasPorMinutoLimpo));
+ok('nenhuma OF descartada do ritmo', pr070.ofsDescartadasRitmo === 0, String(pr070.ofsDescartadasRitmo));
 const maq = m.maquinas[0];
 ok('faixa de ritmo por produto exposta', maq.ritmoMin !== null && maq.ritmoMax !== null && maq.ritmoMax > maq.ritmoMin);
 
@@ -186,6 +191,13 @@ console.log('\n== linhas ilegiveis nao somem ==');
 const sujo = api.parsearRelatorio('PRODUTO : 111.222.333\nDESC QUALQUER\n999999 ; xx ; yy\ntexto solto que nao e nada');
 ok('linhas problematicas reportadas', sujo.diagnostico.falhas.length >= 1, 'n=' + sujo.diagnostico.falhas.length);
 
+console.log('\n== intervalo de refeicao ==');
+ok('total de refeicao do periodo = 72 min', m.resumo.refeicao === 72, String(m.resumo.refeicao));
+ok('1 OF atravessa o almoco', m.resumo.ofsComRefeicao === 1, String(m.resumo.ofsComRefeicao));
+ok('tempo sem OF nao muda: as lacunas nao caem no almoco', m.turnos[0].semOF === 66, String(m.turnos[0].semOF));
+ok('OF fora do almoco nao e afetada', of('801415').minutosReais === 19 && of('801415').minutosRefeicao === 0);
+ok('801403 (14:13-16:16) intacta', of('801403').minutosReais === 123);
+
 console.log('\n== relatorio de paradas ==');
 const AMOSTRA_PARADAS = readFileSync(join(raiz, 'testes', 'amostra-paradas-19-08.txt'), 'utf8');
 const maquinas = [...new Set(registros.map(r => r.maquinaDescricao).filter(Boolean))];
@@ -200,7 +212,8 @@ ok('8,53->9,06 = 13 min', pm.some(x => x.iniTxt === '8,53' && x.minutos === 13))
 ok('coluna Hr 0,130000 lida como 13 min', pm.some(x => x.iniTxt === '8,53' && x.minutosInformados === 13));
 ok('linha unica (14,13) tambem lida', pm.some(x => x.iniTxt === '14,13' && x.minutos === 2 && x.ordem === null));
 const div = pp.paradas.find(x => x.iniTxt === '10,49');
-ok('Hr divergente detectada (104 min x 32 min)', div.minutos === 104 && div.minutosInformados === 32 && div.divergenciaMin === 72,
+ok('10,49->12,33 com almoco descontado = 32 min, igual a coluna Hr do ERP',
+   div.minutos === 32 && div.minutosInformados === 32 && div.divergenciaMin === 0,
    div.minutos + '/' + div.minutosInformados);
 ok('7,590000 lido como 7h59', pp.paradas.find(x => x.iniTxt === '5,00').minutosInformados === 479);
 ok('0,339404 NAO e HH.MM (hora decimal)', api.hhmmParaMinutos('0,339404').min === null);
@@ -219,7 +232,7 @@ ok('801412 ritmo liquido 90/1', of412.minutosLiquidos === 1 && of412.pecasPorMin
 const of458 = mp.ordens.find(o => o.ordem === '801458');
 ok('801458 sinalizada: parada cobre a OF inteira', of458.anomalias.some(a => a.tipo === 'parada-cobre-of'));
 const prPar = mp.produtos.find(p => p.produto === '794.003.070');
-ok('794.003.070 bruto 350/73 e liquido 350/55', perto(prPar.pecasPorMinutoLimpo, 350/73, 1e-9) && perto(prPar.pecasPorMinutoLiquido, 350/55, 1e-9),
+ok('794.003.070 bruto 440/92 e liquido 440/74', perto(prPar.pecasPorMinutoLimpo, 440/92, 1e-9) && perto(prPar.pecasPorMinutoLiquido, 440/74, 1e-9),
    String(prPar.pecasPorMinutoLiquido));
 ok('sem paradas o modelo continua funcionando', api.construirModelo(registros, diagnostico, null).resumo.paradasMin === 0);
 

@@ -318,6 +318,21 @@ details.falhas pre{
     </div>
 
     <div class="cartao">
+      <header><h2>Parâmetros do turno</h2></header>
+      <div class="corpo">
+        <p class="dica">O ERP desconta o intervalo de refeição do tempo padrão, mas o HR.INICIO e o HR.FIM continuam atravessando o horário. Sem esse desconto, toda ordem que cruza o almoço parece lenta por um motivo que não é da máquina.</p>
+        <div class="linha-botoes">
+          <label style="display:flex; align-items:center; gap:7px; font-size:14px; font-weight:600">
+            <input type="checkbox" id="refeicao-ativo" checked> Descontar intervalo de refeição
+          </label>
+          <label style="font-size:14px">de <input type="time" id="refeicao-ini" value="11:00" style="width:auto; font-family:inherit"></label>
+          <label style="font-size:14px">até <input type="time" id="refeicao-fim" value="12:12" style="width:auto; font-family:inherit"></label>
+          <span class="contagem" id="refeicao-info"></span>
+        </div>
+      </div>
+    </div>
+
+    <div class="cartao">
       <header>
         <h2>Relatório de paradas <span class="selo selo-info">ℹ opcional</span></h2>
         <span class="contagem">RELAT. PLANILHAMENTOS PARADAS</span>
@@ -410,7 +425,7 @@ details.falhas pre{
       <header><h2>Composição do tempo</h2></header>
       <div class="corpo sem-padding">
         <div class="rolagem" id="resumo-tempo"></div>
-        <div class="explica">Janela de turno é do primeiro HR.INICIO ao último HR.FIM de cada máquina/operador/dia. <b>Tempo sem OF</b> é a soma das lacunas entre apontamentos dentro dessa janela: nem produção, nem parada apontada — é o tempo que ninguém consegue explicar hoje.</div>
+        <div class="explica" id="explica-tempo">Janela de turno é do primeiro HR.INICIO ao último HR.FIM de cada máquina/operador/dia. <b>Tempo sem OF</b> é a soma das lacunas entre apontamentos dentro dessa janela: nem produção, nem parada apontada — é o tempo que ninguém consegue explicar hoje.</div>
       </div>
     </div>
   </section>
@@ -566,6 +581,21 @@ function numeroBR(valor){
   else if((t.match(/\./g) || []).length > 1) t = t.replace(/\./g, '');
   var n = parseFloat(t);
   return isNaN(n) ? null : n;
+}
+
+/** Minutos em comum entre dois intervalos. */
+function sobrepor(a1, a2, b1, b2){
+  if(a1 === null || a2 === null || b1 === null || b2 === null) return 0;
+  return Math.max(0, Math.min(a2, b2) - Math.max(a1, b1));
+}
+
+/* Intervalo de refeição: o ERP desconta, então não é produção nem tempo perdido.
+   Configurável na tela porque muda por turno e por fábrica. */
+var CONFIG = {refeicao:{ativo:true, iniMin:11 * 60, fimMin:12 * 60 + 12}};
+
+function minutosDeRefeicao(iniMin, fimMin){
+  if(!CONFIG.refeicao.ativo) return 0;
+  return sobrepor(iniMin, fimMin, CONFIG.refeicao.iniMin, CONFIG.refeicao.fimMin);
 }
 
 function mediana(lista){
@@ -953,14 +983,26 @@ function construirOrdens(registros){
       return !l.semFechamento && l.horaInicioMin !== null && l.horaFimMin !== null && l.horaFimMin < l.horaInicioMin;
     });
 
-    o.minutosReais = 0; o.temMinutos = false;
+    o.minutosReais = 0; o.minutosBrutos = 0; o.minutosRefeicao = 0; o.temMinutos = false;
     o.legs.forEach(function(l){
       if(l.semFechamento || l.horaInicioMin === null || l.horaFimMin === null) return;
       if(l.horaFimMin < l.horaInicioMin) return;
-      l.minutosReais = l.horaFimMin - l.horaInicioMin;
+      l.minutosBrutos = l.horaFimMin - l.horaInicioMin;
+      l.minutosRefeicao = minutosDeRefeicao(l.horaInicioMin, l.horaFimMin);
+      l.minutosReais = l.minutosBrutos - l.minutosRefeicao;
+      o.minutosBrutos += l.minutosBrutos;
+      o.minutosRefeicao += l.minutosRefeicao;
       o.minutosReais += l.minutosReais;
       o.temMinutos = true;
     });
+    if(o.minutosRefeicao > 0){
+      marcar(o, 'refeicao-descontada', 'info', 'Intervalo de refeição descontado',
+        'A janela desta OF (' + o.legs[0].horaInicioTxt + ' a ' + o.legs[o.legs.length - 1].horaFimTxt + ', ' +
+        fmt(o.minutosBrutos, 0) + ' min de relógio) atravessa o intervalo de refeição de ' +
+        minutosParaHHMM(CONFIG.refeicao.iniMin) + ' a ' + minutosParaHHMM(CONFIG.refeicao.fimMin) + '. ' +
+        fmt(o.minutosRefeicao, 0) + ' min foram descontados, como o ERP faz: sobram ' + fmt(o.minutosReais, 0) +
+        ' min de produção. Sem esse desconto a ordem pareceria lenta por um motivo que não é da máquina.');
+    }
 
     o.partida = o.datas.length > 1 || o.legs.length > 1;
     o.incompleta = !o.aberta && o.qtdeProduzida === 0;
@@ -1405,7 +1447,8 @@ function analisarTurnos(registros){
     var partes = chave.split('|');
     var janelaIni = lista[0].horaInicioMin;
     var janelaFim = Math.max.apply(null, lista.map(function(r){ return r.horaFimMin; }));
-    var apontado = soma(lista, function(r){ return r.horaFimMin - r.horaInicioMin; });
+    var refeicaoNaJanela = minutosDeRefeicao(janelaIni, janelaFim);
+    var apontado = soma(lista, function(r){ return (r.horaFimMin - r.horaInicioMin) - minutosDeRefeicao(r.horaInicioMin, r.horaFimMin); });
 
     var uniao = [], lacunas = [], sobreposicoes = [];
     lista.forEach(function(r){
@@ -1414,19 +1457,24 @@ function analisarTurnos(registros){
         if(r.horaInicioMin < ult.fim) sobreposicoes.push({ordem:r.ordem, min:Math.min(ult.fim, r.horaFimMin) - r.horaInicioMin});
         ult.fim = Math.max(ult.fim, r.horaFimMin);
       }else{
-        if(ult) lacunas.push({deMin:ult.fim, ateMin:r.horaInicioMin, min:r.horaInicioMin - ult.fim,
-                              antes:ult.ultimaOrdem, depois:r.ordem});
+        if(ult){
+          var refLac = minutosDeRefeicao(ult.fim, r.horaInicioMin);
+          var minLac = (r.horaInicioMin - ult.fim) - refLac;
+          if(minLac > 0) lacunas.push({deMin:ult.fim, ateMin:r.horaInicioMin, min:minLac, refeicao:refLac,
+                                       antes:ult.ultimaOrdem, depois:r.ordem});
+        }
         uniao.push({ini:r.horaInicioMin, fim:r.horaFimMin});
       }
       uniao[uniao.length - 1].ultimaOrdem = r.ordem;
     });
-    var coberto = soma(uniao, function(u){ return u.fim - u.ini; });
+    var coberto = soma(uniao, function(u){ return (u.fim - u.ini) - minutosDeRefeicao(u.ini, u.fim); });
 
     turnos.push({
       maquina:partes[0], funcionario:partes[1], data:partes[2],
       funcionarioNome:lista[0].funcionarioNome, maquinaDescricao:lista[0].maquinaDescricao,
-      inicioMin:janelaIni, fimMin:janelaFim, janela:janelaFim - janelaIni,
-      apontado:apontado, coberto:coberto, semOF:(janelaFim - janelaIni) - coberto,
+      inicioMin:janelaIni, fimMin:janelaFim, janela:(janelaFim - janelaIni) - refeicaoNaJanela,
+      janelaBruta:janelaFim - janelaIni, refeicao:refeicaoNaJanela,
+      apontado:apontado, coberto:coberto, semOF:((janelaFim - janelaIni) - refeicaoNaJanela) - coberto,
       sobreposicao:apontado - coberto, sobreposicoes:sobreposicoes,
       lacunas:lacunas, qtdeApontamentos:lista.length
     });
@@ -1571,6 +1619,9 @@ function construirModelo(registros, diagnostico, paradas){
     horasReais: minutos / 60,
     horasPadrao: soma(elig, function(o){ return o.horasPadrao; }),
     janela: soma(turnos, function(t){ return t.janela; }),
+    janelaBruta: soma(turnos, function(t){ return t.janelaBruta; }),
+    refeicao: soma(turnos, function(t){ return t.refeicao || 0; }),
+    ofsComRefeicao: ordens.filter(function(o){ return o.minutosRefeicao > 0; }).length,
     semOF: soma(turnos, function(t){ return t.semOF; }),
     sobreposicao: soma(turnos, function(t){ return t.sobreposicao; }),
     produtosDistintos: produtos.length,
@@ -1648,12 +1699,16 @@ function parsearParadas(texto, maquinasConhecidas){
   var linhas = fonte.replace(/\r\n?/g, '\n').split('\n');
   diag.linhasTotais = linhas.length;
 
-  var RE_PARADA = /(\d{2}\/\d{2}\/\d{2,4})\s*;?\s*(\d{1,2}[.,]\d{1,2})\s*;?\s*(\d{1,2}[.,]\d{1,2})\s*;?\s*([\d.,]+)/;
+  var RE_PARADA = /(\d{2}\/\d{2}\/\d{2,4})\s*(?:[A-Za-zÀ-ÿ]{1,3}\s+)?(\d{1,2}[.,]\d{1,2})\s*(\d{1,2}[.,]\d{1,2})\s*([\d.,]+)/;
   var ultimo = null;
 
   for(var i = 0; i < linhas.length; i++){
     var bruta = linhas[i];
     var linha = bruta.replace(/[«»]/g, ' ').replace(/ /g, ' ').replace(/\s+/g, ' ').trim();
+    /* a colagem do PDF cola a data no meio do nome: "MARROSTEGA19/08/26O 7,44" */
+    linha = linha.replace(/([A-Za-zÀ-ÿ])(\d{2}\/\d{2}\/\d{2,4})/g, '$1 $2 ')
+                 .replace(/(\d{2}\/\d{2}\/\d{2,4})([A-Za-zÀ-ÿ])/g, '$1 $2')
+                 .replace(/;+/g, ' ').replace(/\s+/g, ' ').trim();
     var nLinha = i + 1;
     if(linha === '' || /^[;\s.-]*$/.test(linha)){ diag.ruido++; continue; }
 
@@ -1665,7 +1720,12 @@ function parsearParadas(texto, maquinasConhecidas){
       diag.ruido++; continue;
     }
     if(/^Total\s*:?/i.test(linha) || /%\s*$/.test(linha)){ diag.ruido++; continue; }
-    if(/RELAT|PLANILHAM|CNPJ|I\.E\.|P[áa]gina|^Data\s*:|^Hora\s*:|Per[íi]odo|^Produ[çc][ãa]o|^L[óo]gica|Funcion[áa]rio\s*;|Motivo\s+Parada|^Ordem\s*:/i.test(linha)){
+    if(/RELAT|PLANILHAM|CNPJ|I\.E\.|P[áa]gina|Data\s*:|Hora\s*:|Per[íi]odo|^Produ[çc][ãa]o|^L[óo]gica|Motivo\s+Parada|^Ordem\s*:|MOVEIS\s+LTDA|PATRIMAR/i.test(linha)
+       || /^Funcion[áa]rio\b/i.test(linha)
+       || /Resum\s?o\s+por|Tem\s?po\s+Total|Percentual|^Total\s*:?\s*$/i.test(linha)
+       || /^[\d.,]+\s*$/.test(linha)
+       || /^[\d./-]{6,}\s+[\d./-]{6,}$/.test(linha)
+       || /^(\d{2}\/\d{2}\/\d{2,4}\s*){1,2}[\d\s]*$/.test(linha)){
       diag.ruido++; continue;
     }
 
@@ -1704,7 +1764,8 @@ function parsearParadas(texto, maquinasConhecidas){
         linhaOrigem:nLinha, funcionarioNome:nome, funcionarioChave:chaveNome(nome),
         data:data ? data.iso : null, dataBR:data ? data.br : m[1],
         iniTxt:m[2], fimTxt:m[3], iniMin:hi.min, fimMin:hf.min,
-        minutos:(hi.min !== null && hf.min !== null && hf.min >= hi.min) ? hf.min - hi.min : null,
+        minutos:(hi.min !== null && hf.min !== null && hf.min >= hi.min)
+                ? (hf.min - hi.min) - minutosDeRefeicao(hi.min, hf.min) : null,
         minutosInformados:hrInformada.min, horasInformadas:numeroBR(m[4]),
         maquinaDescricao:maquina, ordem:(ordem && ordem !== '0') ? ordem : null,
         motivo:motivo.replace(/\s+/g, ' ').trim() || '(sem motivo)',
@@ -1734,11 +1795,6 @@ function parsearParadas(texto, maquinasConhecidas){
   }
 
   return {paradas:paradas, diagnostico:diag};
-}
-
-function sobrepor(a1, a2, b1, b2){
-  if(a1 === null || a2 === null || b1 === null || b2 === null) return 0;
-  return Math.max(0, Math.min(a2, b2) - Math.max(a1, b1));
 }
 
 /** Casa cada parada com a janela de turno, com as lacunas sem OF e com as OFs. */
@@ -2391,7 +2447,10 @@ function definirTodasAsTabelas(){
       {ch:'funcionario', tit:'Operador', val:function(l){ return l.funcionario + ' ' + (l.funcionarioNome || ''); }},
       {ch:'inicio', tit:'1º início', val:function(l){ return minutosParaHHMM(l.inicioMin); }, cls:'mono'},
       {ch:'fim', tit:'Último fim', val:function(l){ return minutosParaHHMM(l.fimMin); }, cls:'mono'},
-      {ch:'janela', tit:'Janela (min)', tipo:'num', dec:0, val:function(l){ return l.janela; }},
+      {ch:'janelaBruta', tit:'Janela de relógio', tipo:'num', dec:0, val:function(l){ return l.janelaBruta; }},
+      {ch:'refeicao', tit:'Refeição', tipo:'num', dec:0, val:function(l){ return l.refeicao || 0; },
+       html:function(l){ return l.refeicao ? '−' + fmt(l.refeicao, 0) : '—'; }},
+      {ch:'janela', tit:'Janela útil', tipo:'num', dec:0, val:function(l){ return l.janela; }},
       {ch:'coberto', tit:'Apontado (min)', tipo:'num', dec:0, val:function(l){ return l.coberto; }},
       {ch:'semOF', tit:'Sem OF (min)', tipo:'num', dec:0, val:function(l){ return l.semOF; },
        html:function(l){ return '<b>' + fmt(l.semOF, 0) + '</b><span class="obs">' + pct(l.janela ? l.semOF / l.janela * 100 : null) + ' da janela</span>'; }},
@@ -2400,7 +2459,9 @@ function definirTodasAsTabelas(){
        html:function(l){ return l.sobreposicao > 0 ? selo(fmt(l.sobreposicao, 0) + ' min sobrepostos', 'critico') : '0'; }}
     ],
     totalizador:function(linhas){
-      return {data:'Total', janela:fmt(soma(linhas, function(l){ return l.janela; }), 0),
+      return {data:'Total', janelaBruta:fmt(soma(linhas, function(l){ return l.janelaBruta; }), 0),
+              refeicao:'−' + fmt(soma(linhas, function(l){ return l.refeicao || 0; }), 0),
+              janela:fmt(soma(linhas, function(l){ return l.janela; }), 0),
               coberto:fmt(soma(linhas, function(l){ return l.coberto; }), 0),
               semOF:fmt(soma(linhas, function(l){ return l.semOF; }), 0)};
     }
@@ -2745,7 +2806,8 @@ function renderResumo(m){
 
   $('#resumo-kpis').innerHTML =
     kpi('Peças produzidas', fmt(r.pecas, 0), 'somente OFs válidas') +
-    kpi('Horas reais apontadas', fmt(r.horasReais, 2), minutosParaHHMM(r.minutosReais) + ' de relógio') +
+    kpi('Horas reais apontadas', fmt(r.horasReais, 2), minutosParaHHMM(r.minutosReais) +
+        (r.refeicao ? ' · ' + fmt(r.refeicao, 0) + ' min de refeição já descontados' : ' de relógio')) +
     kpi('Horas padrão (ERP)', fmt(r.horasPadrao, 4), 'quantidade × tempo padrão') +
     kpi('Aderência global', pct(r.aderencia), 'padrão ÷ real', classeAderencia(r.aderencia), true) +
     kpi('Tempo sem OF', fmt(r.semOF, 0) + ' min', pct(r.percSemOF) + ' da janela de ' + fmt(r.janela, 0) + ' min',
@@ -2760,6 +2822,12 @@ function renderResumo(m){
     kpi('Divergência de totais', c3(m), 'linhas × subtotais × rodapé', (m.conferencia.linhasVsRodape && m.conferencia.linhasVsRodape.divergente) ? 'atencao' : 'ok');
 
   dadosTabela('tempo', m.turnos); renderTabela('tempo');
+  var ex = $('#explica-tempo');
+  if(ex) ex.innerHTML = 'Janela de turno é do primeiro HR.INICIO ao último HR.FIM de cada máquina/operador/dia' +
+    (r.refeicao ? ', já sem os ' + fmt(r.refeicao, 0) + ' min de refeição (' +
+      minutosParaHHMM(CONFIG.refeicao.iniMin) + ' a ' + minutosParaHHMM(CONFIG.refeicao.fimMin) +
+      '), que o ERP também desconta' : '') +
+    '. <b>Tempo sem OF</b> é a soma das lacunas entre apontamentos dentro dessa janela: nem produção, nem parada apontada, nem refeição — é o tempo que ninguém consegue explicar hoje.';
 }
 var ROTULO_ANOMALIA = {
   'padrao-divergente':'padrão entre cores', 'padrao-inconsistente':'padrão entre OFs',
@@ -2986,7 +3054,30 @@ function processarParadas(texto){
   }
 }
 
+function aplicarRefeicao(){
+  var ativo = $('#refeicao-ativo').checked;
+  var ini = ($('#refeicao-ini').value || '11:00').split(':');
+  var fim = ($('#refeicao-fim').value || '12:12').split(':');
+  var iniMin = parseInt(ini[0], 10) * 60 + parseInt(ini[1], 10);
+  var fimMin = parseInt(fim[0], 10) * 60 + parseInt(fim[1], 10);
+  if(!isFinite(iniMin) || !isFinite(fimMin) || fimMin <= iniMin){
+    $('#refeicao-info').textContent = 'Horário inválido: o fim precisa ser depois do início.';
+    return;
+  }
+  CONFIG.refeicao = {ativo:ativo, iniMin:iniMin, fimMin:fimMin};
+  $('#refeicao-info').textContent = ativo
+    ? (fimMin - iniMin) + ' min descontados de toda ordem que atravessar esse horário'
+    : 'Desconto desligado: o tempo de refeição vai contar como produção.';
+  if(ESTADO.modelo){
+    renderTudo(construirModelo(ESTADO.modelo.registros, ESTADO.modelo.diagnostico, ESTADO.paradas));
+  }
+}
+
 function ligarEventos(){
+  ['#refeicao-ativo','#refeicao-ini','#refeicao-fim'].forEach(function(sel){
+    $(sel).addEventListener('change', aplicarRefeicao);
+  });
+
   $$('.abas button').forEach(function(b){
     b.addEventListener('click', function(){ if(!b.disabled) irPara(b.dataset.aba); });
   });
@@ -3176,6 +3267,7 @@ var RELATORIO_EXEMPLO = [
    ------------------------------------------------------------ */
 definirTodasAsTabelas();
 ligarEventos();
+aplicarRefeicao();
 irPara('importar');
 </script>
 </body>

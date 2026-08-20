@@ -48,6 +48,17 @@ e responde o que o apontamento sozinho não responde:
 Aceita tanto a exportação em uma linha por parada quanto a colagem do PDF, em que nome e
 máquina caem numa linha de continuação.
 
+## Intervalo de refeição
+
+O ERP desconta a refeição do tempo padrão, mas `HR.INICIO` e `HR.FIM` continuam
+atravessando o horário. Sem descontar, toda ordem que cruza o almoço parece lenta por
+um motivo que não é da máquina. O intervalo é configurável na aba Importar (padrão
+11:00 às 12:12) e sai da duração das OFs, da janela de turno e das paradas.
+
+No dia 19/08 isso muda a leitura: a OF 801414 tem 91 min de relógio, dos quais 72 são
+almoço — sobram os mesmos 19 min das quatro OFs gêmeas. O que parecia parada embutida
+era o intervalo.
+
 ## Estrutura
 
 Arquivo único, sem build, sem dependências, sem servidor. O código está em seções
